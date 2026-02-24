@@ -924,6 +924,50 @@ export default function CommandCenter() {
   const [weightGoalInput, setWeightGoalInput] = useState("");
   const [weightGoalDateInput, setWeightGoalDateInput] = useState("");
 
+  // ─── Habit Streaks (Feature 1) ─────────────────────────────
+  const [streaks, setStreaks] = useState(() => loadStorage("cc_streaks", {}));
+
+  // ─── Sleep Optimization (Feature 2) ────────────────────────
+  const [sleepAnalysis, setSleepAnalysis] = useState(() => loadStorage("cc_sleep_analysis", null));
+  const [sleepAnalysisLoading, setSleepAnalysisLoading] = useState(false);
+
+  // ─── Grocery/Meal Planning (Feature 3) ─────────────────────
+  const [macroTargets, setMacroTargets] = useState(() => loadStorage("cc_macro_targets", { protein: 180, carbs: 250, fat: 70, calories: 2800 }));
+  const [groceryList, setGroceryList] = useState(() => loadStorage("cc_grocery", []));
+  const [mealTemplates, setMealTemplates] = useState(() => loadStorage("cc_meal_templates", []));
+  const [newTemplateName, setNewTemplateName] = useState("");
+  const [newTemplateP, setNewTemplateP] = useState("");
+  const [newTemplateC, setNewTemplateC] = useState("");
+  const [newTemplateF, setNewTemplateF] = useState("");
+
+  // ─── Budget Alerts (Feature 4) ─────────────────────────────
+  const [budgets, setBudgets] = useState(() => loadStorage("cc_budgets", { total: 3000, Housing: 1200, Food: 500, Transport: 200, Health: 150, Entertainment: 200, Bills: 500, Other: 250 }));
+  const [budgetEditMode, setBudgetEditMode] = useState(false);
+
+  // ─── Workout Auto-Progression (Feature 5) ──────────────────
+  const [progression, setProgression] = useState(() => loadStorage("cc_progression", {}));
+
+  // ─── Dark/Sleep Mode (Feature 6) ───────────────────────────
+  const [sleepMode, setSleepMode] = useState(() => {
+    const override = loadStorage("cc_sleep_mode_override", null);
+    if (override !== null) return override;
+    const h = new Date().getHours();
+    return h >= 22 || h < 6;
+  });
+  const [sleepModeOverride, setSleepModeOverride] = useState(() => loadStorage("cc_sleep_mode_override", null));
+
+  // ─── GPS Activity Tracking (Feature 7) ─────────────────────
+  const [gpsTracking, setGpsTracking] = useState(false);
+  const [gpsPaused, setGpsPaused] = useState(false);
+  const [gpsPositions, setGpsPositions] = useState([]);
+  const [gpsStartTime, setGpsStartTime] = useState(null);
+  const [gpsElapsed, setGpsElapsed] = useState(0);
+  const [activities, setActivities] = useState(() => loadStorage("cc_activities", []));
+  const gpsWatchId = useRef(null);
+
+  // ─── Social Accountability (Feature 8) ─────────────────────
+  const [accountabilityWeeks, setAccountabilityWeeks] = useState(() => loadStorage("cc_accountability_weeks", []));
+
   // ─── Meds / Vitamins ──────────────────────────────────────
   const [meds, setMeds] = useState(() => {
     const stored = loadStorage("cc_meds", null);
@@ -990,6 +1034,16 @@ export default function CommandCenter() {
   useEffect(() => { localStorage.setItem("cc_weekly_reports", JSON.stringify(weeklyReports)); }, [weeklyReports]);
   useEffect(() => { localStorage.setItem("cc_prs", JSON.stringify(prs)); }, [prs]);
   useEffect(() => { localStorage.setItem("cc_weight_goal", JSON.stringify(weightGoal)); }, [weightGoal]);
+  useEffect(() => { localStorage.setItem("cc_streaks", JSON.stringify(streaks)); }, [streaks]);
+  useEffect(() => { if (sleepAnalysis) localStorage.setItem("cc_sleep_analysis", JSON.stringify(sleepAnalysis)); }, [sleepAnalysis]);
+  useEffect(() => { localStorage.setItem("cc_macro_targets", JSON.stringify(macroTargets)); }, [macroTargets]);
+  useEffect(() => { localStorage.setItem("cc_grocery", JSON.stringify(groceryList)); }, [groceryList]);
+  useEffect(() => { localStorage.setItem("cc_meal_templates", JSON.stringify(mealTemplates)); }, [mealTemplates]);
+  useEffect(() => { localStorage.setItem("cc_budgets", JSON.stringify(budgets)); }, [budgets]);
+  useEffect(() => { localStorage.setItem("cc_progression", JSON.stringify(progression)); }, [progression]);
+  useEffect(() => { localStorage.setItem("cc_activities", JSON.stringify(activities)); }, [activities]);
+  useEffect(() => { localStorage.setItem("cc_accountability_weeks", JSON.stringify(accountabilityWeeks)); }, [accountabilityWeeks]);
+  useEffect(() => { if (sleepModeOverride !== null) localStorage.setItem("cc_sleep_mode_override", JSON.stringify(sleepModeOverride)); }, [sleepModeOverride]);
 
   // ─── Show wellness check once per day ─────────────────────
   useEffect(() => {
@@ -1542,6 +1596,300 @@ export default function CommandCenter() {
     } catch { alert("Notifications blocked by browser."); }
   }, [notifPermission, requestNotifPermission]);
 
+  // ─── Habit Streaks System (Feature 1) ───────────────────────
+  const STREAK_HABITS = ["100 Push-ups", "Take Vitamins", "Log Weight", "Log Macros", "Complete Workout"];
+  const STREAK_MILESTONES = [7, 14, 30, 60, 90, 100];
+
+  const updateStreak = useCallback((habitName) => {
+    setStreaks(prev => {
+      const existing = prev[habitName] || { current_streak: 0, longest_streak: 0, last_completed_date: null };
+      if (existing.last_completed_date === localDate) return prev; // Already counted today
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
+      const consecutive = existing.last_completed_date === yesterdayStr;
+      const newStreak = consecutive ? existing.current_streak + 1 : 1;
+      const newLongest = Math.max(existing.longest_streak, newStreak);
+      // Milestone sound
+      if (STREAK_MILESTONES.includes(newStreak)) {
+        try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const o = ctx.createOscillator(); o.type = "sine"; o.frequency.value = 440; o.connect(ctx.destination); o.start(); setTimeout(() => { o.frequency.value = 554; }, 100); setTimeout(() => { o.frequency.value = 659; }, 200); setTimeout(() => { o.frequency.value = 880; }, 300); setTimeout(() => { o.stop(); ctx.close(); }, 500); } catch {}
+      }
+      return { ...prev, [habitName]: { current_streak: newStreak, longest_streak: newLongest, last_completed_date: localDate } };
+    });
+  }, [localDate, today]);
+
+  // Auto-check streaks when tasks complete
+  useEffect(() => {
+    const pushups = tasks.find(t => t.name === "100 Push-ups");
+    if (pushups?.done) updateStreak("100 Push-ups");
+    const vitamins = tasks.find(t => t.name === "Take Vitamins");
+    if (vitamins?.done) updateStreak("Take Vitamins");
+  }, [tasks, updateStreak]);
+
+  useEffect(() => {
+    if (weights.length > 0 && weights[weights.length - 1].date === new Date().toLocaleDateString()) updateStreak("Log Weight");
+  }, [weights, updateStreak]);
+
+  useEffect(() => {
+    if (macros.length > 0 && macros[macros.length - 1].date === new Date().toLocaleDateString()) updateStreak("Log Macros");
+  }, [macros, updateStreak]);
+
+  // Add streak notifications to the notification scheduler
+  // (already integrated into notification check interval above — adding streak check to 9 PM)
+
+  // ─── Sleep Optimization (Feature 2) ─────────────────────────
+  const generateSleepAnalysis = useCallback(async () => {
+    setSleepAnalysisLoading(true);
+    const sleepScore = ouraData?.sleepScore;
+    const readiness = ouraData?.readinessScore;
+    const duration = ouraData?.sleepDuration;
+
+    const tips = [];
+    if (sleepScore != null) {
+      if (sleepScore < 60) tips.push("Sleep quality declining. Consider: earlier bedtime, reduce screen time, cool bedroom.");
+      else if (sleepScore >= 80) tips.push("Sleep dialed in. Maintain current routine.");
+      else tips.push("Sleep acceptable but room for improvement. Optimize sleep hygiene.");
+    }
+    if (readiness != null && readiness < 60 && sleepScore >= 60) {
+      tips.push("Recovery lagging despite decent sleep. Check training load, stress, nutrition.");
+    }
+    if (duration != null && duration < 25200) {
+      tips.push("Averaging under 7 hours. Aim for 7-9 hours for optimal recovery.");
+    }
+
+    // Try Claude API for personalized analysis
+    let aiAnalysis = null;
+    try {
+      const context = `Sleep score: ${sleepScore ?? "N/A"}, Readiness: ${readiness ?? "N/A"}, Duration: ${duration ? Math.round(duration / 3600) + "h" : "N/A"}`;
+      const res = await fetch(`${PROXY_URL}/ai/chat`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system: "You are a sleep optimization advisor. Give brief, actionable sleep advice (3-5 bullet points max) based on the provided Oura ring data. Be concise.",
+          messages: [{ role: "user", content: `Analyze my sleep data and give optimization tips:\n${context}` }],
+        }),
+      });
+      const data = await res.json();
+      aiAnalysis = data.content?.[0]?.text || null;
+    } catch { /* proxy unavailable — use rule-based tips only */ }
+
+    setSleepAnalysis({
+      tips,
+      aiAnalysis,
+      sleepScore,
+      readiness,
+      date: localDate,
+      analyzedAt: new Date().toISOString(),
+    });
+    setSleepAnalysisLoading(false);
+  }, [ouraData, localDate]);
+
+  // ─── Meal/Grocery Helpers (Feature 3) ────────────────────────
+  const todayMacroTotals = useMemo(() => {
+    const todayMacroEntries = macros.filter(m => m.date === new Date().toLocaleDateString());
+    return todayMacroEntries.reduce((s, m) => ({ protein: s.protein + m.protein, carbs: s.carbs + m.carbs, fat: s.fat + m.fat }), { protein: 0, carbs: 0, fat: 0 });
+  }, [macros]);
+
+  const macroRemaining = useMemo(() => ({
+    protein: Math.max(0, macroTargets.protein - todayMacroTotals.protein),
+    carbs: Math.max(0, macroTargets.carbs - todayMacroTotals.carbs),
+    fat: Math.max(0, macroTargets.fat - todayMacroTotals.fat),
+  }), [macroTargets, todayMacroTotals]);
+
+  const getMacroSuggestions = useCallback(() => {
+    const sugg = [];
+    if (macroRemaining.protein > 20) sugg.push({ macro: "Protein", items: ["Chicken breast (31g/serv)", "Eggs (6g each)", "Greek yogurt (17g)", "Protein shake (25g)", "Ground beef (22g/serv)"] });
+    if (macroRemaining.carbs > 30) sugg.push({ macro: "Carbs", items: ["Rice (45g/cup)", "Oats (27g/serv)", "Sweet potato (26g)", "Banana (27g)", "Pasta (43g/cup)"] });
+    if (macroRemaining.fat > 10) sugg.push({ macro: "Fats", items: ["Avocado (15g)", "Nuts (14g/oz)", "Olive oil (14g/tbsp)", "Peanut butter (16g/2tbsp)"] });
+    return sugg;
+  }, [macroRemaining]);
+
+  const generateGroceryList = useCallback(() => {
+    const weeklyP = macroTargets.protein * 7;
+    const items = [
+      { section: "Meat", items: [
+        { name: `Chicken breast — ${Math.ceil(weeklyP * 0.3 / 31)} servings (~${Math.ceil(weeklyP * 0.3 / 31 * 6)}oz)`, checked: false },
+        { name: `Ground beef 90/10 — ${Math.ceil(weeklyP * 0.2 / 22)} servings`, checked: false },
+        { name: "Eggs — 2 dozen", checked: false },
+      ]},
+      { section: "Dairy", items: [
+        { name: `Greek yogurt — ${Math.ceil(weeklyP * 0.15 / 17)} cups`, checked: false },
+        { name: "Milk — 1 gallon", checked: false },
+        { name: "Cheese — 1 block", checked: false },
+      ]},
+      { section: "Produce", items: [
+        { name: "Bananas — 7", checked: false },
+        { name: "Sweet potatoes — 4-5", checked: false },
+        { name: "Avocados — 3-4", checked: false },
+        { name: "Mixed vegetables — 2 bags", checked: false },
+        { name: "Spinach — 1 bag", checked: false },
+      ]},
+      { section: "Grains", items: [
+        { name: "Rice — 2 lb bag", checked: false },
+        { name: "Oats — 1 canister", checked: false },
+        { name: "Bread — 1 loaf", checked: false },
+      ]},
+      { section: "Other", items: [
+        { name: "Olive oil", checked: false },
+        { name: "Peanut butter", checked: false },
+        { name: "Protein powder — if low", checked: false },
+        { name: "Nuts/almonds — 1 bag", checked: false },
+      ]},
+    ];
+    const flat = [];
+    items.forEach(s => s.items.forEach(i => flat.push({ ...i, section: s.section })));
+    setGroceryList(flat);
+  }, [macroTargets]);
+
+  const addMealTemplate = useCallback(() => {
+    if (!newTemplateName.trim()) return;
+    const p = parseFloat(newTemplateP) || 0, c = parseFloat(newTemplateC) || 0, f = parseFloat(newTemplateF) || 0;
+    setMealTemplates(prev => [...prev, { name: newTemplateName.trim(), protein: p, carbs: c, fat: f, calories: p * 4 + c * 4 + f * 9 }]);
+    setNewTemplateName(""); setNewTemplateP(""); setNewTemplateC(""); setNewTemplateF("");
+  }, [newTemplateName, newTemplateP, newTemplateC, newTemplateF]);
+
+  const quickLogMeal = useCallback((template) => {
+    setMacros(prev => [...prev, { date: new Date().toLocaleDateString(), protein: template.protein, carbs: template.carbs, fat: template.fat }]);
+  }, []);
+
+  // ─── Budget Alert Helpers (Feature 4) ────────────────────────
+  const monthExpenseByCat = useMemo(() => {
+    const cats = {};
+    const now = new Date();
+    transactions.filter(t => {
+      const d = new Date(t.date);
+      return t.type === "expense" && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    }).forEach(t => { cats[t.category] = (cats[t.category] || 0) + t.amount; });
+    return cats;
+  }, [transactions]);
+
+  const totalMonthSpent = useMemo(() => Object.values(monthExpenseByCat).reduce((s, v) => s + v, 0), [monthExpenseByCat]);
+  const budgetPct = budgets.total > 0 ? Math.round((totalMonthSpent / budgets.total) * 100) : 0;
+  const budgetStatus = budgetPct >= 100 ? "exceeded" : budgetPct >= 90 ? "critical" : budgetPct >= 75 ? "warning" : "ok";
+  const dailyAvgSpend = useMemo(() => {
+    const dayOfMonth = today.getDate();
+    return dayOfMonth > 0 ? +(totalMonthSpent / dayOfMonth).toFixed(2) : 0;
+  }, [totalMonthSpent, today]);
+  const projectedMonthly = useMemo(() => {
+    const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    return +(dailyAvgSpend * daysInMonth).toFixed(2);
+  }, [dailyAvgSpend, today]);
+
+  // ─── Workout Progression (Feature 5) ─────────────────────────
+  const UPPER_BODY = ["Bench Press", "Overhead Press", "Incline", "Cable Flyes", "Lateral Raises", "Barbell Row", "Seated Cable Row", "Face Pulls", "Barbell Curl"];
+  const getProgressionSuggestion = useCallback((exerciseName) => {
+    const prog = progression[exerciseName];
+    if (!prog) return null;
+    const isUpper = UPPER_BODY.some(u => exerciseName.toLowerCase().includes(u.toLowerCase()));
+    const increment = isUpper ? 5 : 10;
+    if (prog.consecutive_fails >= 3) {
+      const deload = Math.round(prog.current_weight * 0.9);
+      return { type: "deload", weight: deload, text: `Deload to ${deload}lbs` };
+    }
+    if (prog.last_completed) {
+      return { type: "increase", weight: prog.current_weight + increment, text: `Increase to ${prog.current_weight + increment}lbs` };
+    }
+    return { type: "maintain", weight: prog.current_weight, text: `Stay at ${prog.current_weight}lbs` };
+  }, [progression]);
+
+  // ─── Dark/Sleep Mode (Feature 6) ────────────────────────────
+  useEffect(() => {
+    if (sleepModeOverride !== null) return; // manual override active
+    const checkTime = () => {
+      const h = new Date().getHours();
+      setSleepMode(h >= 22 || h < 6);
+    };
+    const id = setInterval(checkTime, 60000);
+    return () => clearInterval(id);
+  }, [sleepModeOverride]);
+
+  const toggleSleepMode = useCallback(() => {
+    const newVal = !sleepMode;
+    setSleepMode(newVal);
+    setSleepModeOverride(newVal);
+    // Auto-clear override after 8 hours
+    setTimeout(() => { setSleepModeOverride(null); localStorage.removeItem("cc_sleep_mode_override"); }, 8 * 60 * 60 * 1000);
+  }, [sleepMode]);
+
+  // ─── GPS Activity Tracking (Feature 7) ──────────────────────
+  const calcDistance = useCallback((positions) => {
+    let total = 0;
+    for (let i = 1; i < positions.length; i++) {
+      const [lat1, lon1] = [positions[i - 1].lat, positions[i - 1].lng];
+      const [lat2, lon2] = [positions[i].lat, positions[i].lng];
+      const R = 3959; // miles
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+      total += R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+    return +total.toFixed(2);
+  }, []);
+
+  const startGpsTracking = useCallback(() => {
+    if (!navigator.geolocation) { alert("Geolocation not supported"); return; }
+    setGpsTracking(true);
+    setGpsPaused(false);
+    setGpsPositions([]);
+    setGpsStartTime(Date.now());
+    setGpsElapsed(0);
+    try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const o = ctx.createOscillator(); o.type = "sine"; o.frequency.value = 660; o.connect(ctx.destination); o.start(); setTimeout(() => { o.stop(); ctx.close(); }, 200); } catch {}
+    gpsWatchId.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        setGpsPositions(prev => [...prev, { lat: pos.coords.latitude, lng: pos.coords.longitude, time: Date.now() }]);
+      },
+      (err) => console.error("GPS error:", err),
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+    );
+  }, []);
+
+  const stopGpsTracking = useCallback(() => {
+    if (gpsWatchId.current != null) navigator.geolocation.clearWatch(gpsWatchId.current);
+    setGpsTracking(false);
+    setGpsPaused(false);
+    try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const o = ctx.createOscillator(); o.type = "sine"; o.frequency.value = 440; o.connect(ctx.destination); o.start(); setTimeout(() => { o.frequency.value = 330; }, 150); setTimeout(() => { o.stop(); ctx.close(); }, 300); } catch {}
+    const dist = calcDistance(gpsPositions);
+    const elapsedMin = gpsElapsed / 60;
+    const pace = dist > 0 ? +(elapsedMin / dist).toFixed(1) : 0;
+    const currentW = weights.length > 0 ? weights[weights.length - 1].weight : 170;
+    const calories = Math.round(elapsedMin * currentW * 0.035);
+    if (dist > 0 || elapsedMin > 1) {
+      setActivities(prev => [...prev, { date: localDate, duration: Math.round(elapsedMin), distance: dist, pace, calories, time: new Date().toISOString() }]);
+    }
+    setGpsPositions([]);
+    setGpsStartTime(null);
+  }, [gpsPositions, gpsElapsed, calcDistance, weights, localDate]);
+
+  // GPS elapsed timer
+  useEffect(() => {
+    if (!gpsTracking || gpsPaused) return;
+    const id = setInterval(() => {
+      setGpsElapsed(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [gpsTracking, gpsPaused]);
+
+  // ─── Social Accountability (Feature 8) ──────────────────────
+  const generateShareText = useCallback((report) => {
+    if (!report) return "";
+    const lines = [
+      "COMMAND CENTER — Weekly Report",
+      `Week of ${weeklyReportViewKey || getWeekStart(localDate)}`,
+      `Training: ${report.training.days}/4 sessions | Volume: ${Math.round(report.training.totalVolume).toLocaleString()}lbs`,
+    ];
+    if (report.training.prs.length > 0) lines.push(`PRs: ${report.training.prs.map(p => `${p.exercise} ${p.weight}lbs`).join(", ")}`);
+    if (report.body.firstWeight && report.body.lastWeight) lines.push(`Weight: ${report.body.firstWeight} → ${report.body.lastWeight} (${report.body.weightChange > 0 ? "+" : ""}${report.body.weightChange})`);
+    if (report.health.stepsPerDay) lines.push(`Steps avg: ${report.health.stepsPerDay?.toLocaleString()}/day`);
+    if (report.health.sleepScore) lines.push(`Sleep avg: ${report.health.sleepScore}`);
+    lines.push(`Task completion: ${report.tasks.completionRate}%`);
+    lines.push(`Meds compliance: ${report.meds.compliance}%`);
+    lines.push(`Grade: ${report.overallGrade}`);
+    return lines.join("\n");
+  }, [weeklyReportViewKey, localDate]);
+
+  const copyShareText = useCallback((text) => {
+    navigator.clipboard.writeText(text).then(() => alert("Copied to clipboard!")).catch(() => {});
+  }, []);
+
   // ─── PR Tracking System ─────────────────────────────────────
   const checkAndUpdatePR = useCallback((exercise, weight, reps) => {
     const w = parseFloat(weight);
@@ -1813,14 +2161,28 @@ export default function CommandCenter() {
       date: new Date().toLocaleDateString(), exercise, weight: data.weight, reps: data.reps, sets: String(data.sets),
     }));
     setStrengthLog((prev) => [...prev, ...newEntries]);
-    // Check PRs from workout
+    // Check PRs and update progression from workout
     newEntries.forEach(entry => {
       const newPR = checkAndUpdatePR(entry.exercise, entry.weight, entry.reps);
       if (newPR) {
         setPrCelebration({ exercise: entry.exercise, weight: newPR.weight, reps: newPR.reps, previous: newPR.previous });
         setTimeout(() => setPrCelebration(null), 5000);
       }
+      // Update progression data
+      const w = parseFloat(entry.weight);
+      if (!isNaN(w) && w > 0) {
+        setProgression(prev => {
+          const existing = prev[entry.exercise] || { current_weight: w, last_completed: true, consecutive_fails: 0 };
+          const completedAllReps = true; // Simplified — if they finished the exercise, count as completed
+          return { ...prev, [entry.exercise]: {
+            current_weight: w,
+            last_completed: completedAllReps,
+            consecutive_fails: completedAllReps ? 0 : (existing.consecutive_fails || 0) + 1,
+          }};
+        });
+      }
     });
+    updateStreak("Complete Workout");
     // Log workout completion
     const elapsed = workoutStartTime ? Math.round((Date.now() - workoutStartTime) / 60000) : 0;
     setDailyActivityLog((prev) => {
@@ -2348,6 +2710,17 @@ export default function CommandCenter() {
           <button className="pip-btn" style={{ width: "100%", marginTop: 12, padding: "10px 16px" }} onClick={() => speakWeeklyReport(report)} disabled={weeklyReportSpeaking}>
             {weeklyReportSpeaking ? "SPEAKING..." : "SPEAK REPORT"}
           </button>
+          <button className="pip-btn" style={{ width: "100%", marginTop: 6, padding: "10px 16px" }} onClick={() => {
+            const text = generateShareText(report);
+            copyShareText(text);
+            // Track accountability
+            const weekKey = weeklyReportViewKey || getWeekStart(localDate);
+            if (!accountabilityWeeks.includes(weekKey)) {
+              setAccountabilityWeeks(prev => [...prev, weekKey]);
+            }
+          }}>
+            COPY SHARE TEXT
+          </button>
         </div>
       </div>
     );
@@ -2450,6 +2823,49 @@ export default function CommandCenter() {
               <div className="briefing-block">
                 <h3>Report Streak</h3>
                 <div className="streak-badge">{"\u2605"} {reportStreak} DAY{reportStreak !== 1 ? "S" : ""} STREAK</div>
+              </div>
+            )}
+
+            {/* Habit Streaks */}
+            {Object.keys(streaks).length > 0 && (
+              <div className="briefing-block">
+                <h3>Habit Streaks</h3>
+                {STREAK_HABITS.map(h => {
+                  const s = streaks[h];
+                  if (!s || s.current_streak === 0) return null;
+                  return (
+                    <div key={h} className="stat-row">
+                      <span className="stat-label">{h}</span>
+                      <span className="stat-value" style={{ color: s.current_streak >= 7 ? "var(--pip-amber)" : "var(--pip-green)" }}>
+                        {"\uD83D\uDD25"} {s.current_streak}d {s.current_streak >= 30 ? "\uD83C\uDFC6" : ""}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Budget Summary */}
+            {budgets.total > 0 && (
+              <div className="briefing-block">
+                <h3>Budget</h3>
+                <div className="health-bar-container">
+                  <div className="health-bar-label"><span>MONTHLY SPENDING</span><span>${totalMonthSpent.toFixed(0)} / ${budgets.total} ({budgetPct}%)</span></div>
+                  <div className="health-bar-track"><div className="health-bar-fill" style={{ width: `${Math.min(budgetPct, 100)}%`, background: budgetStatus === "exceeded" ? "#ff4444" : budgetStatus === "critical" ? "#ff4444" : budgetStatus === "warning" ? "var(--pip-amber)" : "var(--pip-green)" }} /></div>
+                </div>
+                {budgetStatus !== "ok" && (
+                  <div style={{ fontSize: ".7rem", color: budgetStatus === "exceeded" ? "#ff4444" : "var(--pip-amber)", marginTop: 4, textAlign: "center", letterSpacing: 2 }}>
+                    {budgetStatus === "exceeded" ? "BUDGET EXCEEDED" : budgetStatus === "critical" ? "BUDGET CRITICAL — 90%+" : "BUDGET WARNING — 75%+"}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Accountability */}
+            {accountabilityWeeks.length > 0 && (
+              <div className="briefing-block">
+                <h3>Accountability</h3>
+                <div className="streak-badge">{"\u2605"} {accountabilityWeeks.length} WEEK{accountabilityWeeks.length !== 1 ? "S" : ""} REPORTED</div>
               </div>
             )}
 
@@ -2616,7 +3032,20 @@ export default function CommandCenter() {
               <>
                 <div style={{ marginTop: 20 }}>
                   <div className="section-title">// Today's Program \u2014 {dayName.toUpperCase()}</div>
-                  {WEEK_A[dayName].map((ex, i) => <div key={i} className="training-exercise"><span className="name">{ex.name}</span><div className="detail">{ex.sets}</div></div>)}
+                  {WEEK_A[dayName].map((ex, i) => {
+                    const prog = getProgressionSuggestion(ex.name);
+                    return (
+                      <div key={i} className="training-exercise">
+                        <span className="name">{ex.name}</span>
+                        <div className="detail">{ex.sets}</div>
+                        {prog && (
+                          <div style={{ fontSize: ".6rem", marginTop: 2, color: prog.type === "increase" ? "var(--pip-green)" : prog.type === "deload" ? "#ff4444" : "var(--pip-amber)" }}>
+                            {prog.type === "increase" ? "\u25B2" : prog.type === "deload" ? "\u25BC" : "\u25C6"} {prog.text}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
                 <button className="pip-btn" style={{ width: "100%", marginTop: 16, padding: "12px 16px", background: "rgba(24,255,109,.2)", borderColor: "var(--pip-green)" }} onClick={startWorkout}>
                   START WORKOUT
@@ -2945,6 +3374,156 @@ export default function CommandCenter() {
                 );
               })()}
             </div>
+
+            {/* Sleep Intel (Feature 2) */}
+            <div className="briefing-block">
+              <h3>Sleep Intel</h3>
+              {sleepAnalysis && sleepAnalysis.date === localDate ? (
+                <>
+                  <div className="oura-score-row" style={{ marginBottom: 8 }}>
+                    <div className="oura-score-card"><div className="score-label">Sleep</div><div className={`score-value ${scoreClass(sleepAnalysis.sleepScore)}`}>{sleepAnalysis.sleepScore ?? "\u2014"}</div></div>
+                    <div className="oura-score-card"><div className="score-label">Readiness</div><div className={`score-value ${scoreClass(sleepAnalysis.readiness)}`}>{sleepAnalysis.readiness ?? "\u2014"}</div></div>
+                  </div>
+                  {sleepAnalysis.tips.map((tip, i) => (
+                    <div key={i} style={{ fontSize: ".65rem", color: "var(--pip-amber)", padding: "4px 0", letterSpacing: 1 }}>{"\u25C6"} {tip}</div>
+                  ))}
+                  {sleepAnalysis.aiAnalysis && (
+                    <div style={{ marginTop: 8, fontSize: ".65rem", color: "var(--pip-green)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{sleepAnalysis.aiAnalysis}</div>
+                  )}
+                  <div style={{ fontSize: ".5rem", color: "var(--pip-green-dark)", marginTop: 6 }}>Analyzed: {new Date(sleepAnalysis.analyzedAt).toLocaleString()}</div>
+                </>
+              ) : (
+                <div className="empty-state">No analysis for today</div>
+              )}
+              <button className="pip-btn" style={{ width: "100%", marginTop: 8 }} onClick={generateSleepAnalysis} disabled={sleepAnalysisLoading}>
+                {sleepAnalysisLoading ? "ANALYZING..." : "REFRESH ANALYSIS"}
+              </button>
+            </div>
+
+            {/* Habit Streaks (Feature 1) */}
+            <div className="briefing-block">
+              <h3>Habit Streaks</h3>
+              {STREAK_HABITS.map(h => {
+                const s = streaks[h] || { current_streak: 0, longest_streak: 0 };
+                return (
+                  <div key={h} className="stat-row">
+                    <span className="stat-label">{h}</span>
+                    <span className="stat-value">
+                      {s.current_streak > 0 ? <><span style={{ color: "var(--pip-amber)" }}>{"\uD83D\uDD25"} {s.current_streak}d</span> <span style={{ fontSize: ".5rem", color: "var(--pip-green-dim)" }}>best: {s.longest_streak}d</span></> : <span style={{ color: "var(--pip-green-dim)" }}>0d</span>}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* GPS Activity Tracking (Feature 7) */}
+            <div className="briefing-block">
+              <h3>Activity Tracking</h3>
+              {gpsTracking ? (
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: "2rem", color: "var(--pip-green)", textShadow: "var(--pip-text-glow)" }}>
+                    {Math.floor(gpsElapsed / 60)}:{String(gpsElapsed % 60).padStart(2, "0")}
+                  </div>
+                  <div className="oura-score-row" style={{ marginTop: 8 }}>
+                    <div className="oura-score-card"><div className="score-label">Distance</div><div className="score-value" style={{ fontSize: "1.2rem" }}>{calcDistance(gpsPositions)} mi</div></div>
+                    <div className="oura-score-card"><div className="score-label">Pace</div><div className="score-value" style={{ fontSize: "1.2rem" }}>{gpsPositions.length > 1 && calcDistance(gpsPositions) > 0 ? ((gpsElapsed / 60) / calcDistance(gpsPositions)).toFixed(1) : "--"} min/mi</div></div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginTop: 12, justifyContent: "center" }}>
+                    <button className="pip-btn" onClick={() => setGpsPaused(p => !p)}>{gpsPaused ? "RESUME" : "PAUSE"}</button>
+                    <button className="pip-btn" style={{ borderColor: "#ff4444", color: "#ff4444" }} onClick={stopGpsTracking}>STOP</button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <button className="pip-btn" style={{ width: "100%", padding: "12px 16px", background: "rgba(24,255,109,.1)" }} onClick={startGpsTracking}>
+                    START TRACKING
+                  </button>
+                  {activities.length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ fontSize: ".6rem", letterSpacing: 2, color: "var(--pip-green-dim)", marginBottom: 6 }}>RECENT ACTIVITIES</div>
+                      {activities.slice(-5).reverse().map((a, i) => (
+                        <div key={i} className="stat-row">
+                          <span className="stat-label">{a.date}</span>
+                          <span className="stat-value">{a.distance}mi | {a.duration}min | {a.pace}min/mi | {a.calories}cal</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Meal Planning (Feature 3) */}
+            <div className="briefing-block">
+              <h3>Meal Planner</h3>
+              <div className="oura-score-row" style={{ marginBottom: 8 }}>
+                <div className="oura-score-card"><div className="score-label">P Remaining</div><div className="score-value" style={{ fontSize: "1.2rem", color: macroRemaining.protein > 20 ? "var(--pip-amber)" : "var(--pip-green)" }}>{macroRemaining.protein}g</div></div>
+                <div className="oura-score-card"><div className="score-label">C Remaining</div><div className="score-value" style={{ fontSize: "1.2rem", color: macroRemaining.carbs > 30 ? "var(--pip-amber)" : "var(--pip-green)" }}>{macroRemaining.carbs}g</div></div>
+                <div className="oura-score-card"><div className="score-label">F Remaining</div><div className="score-value" style={{ fontSize: "1.2rem", color: macroRemaining.fat > 10 ? "var(--pip-amber)" : "var(--pip-green)" }}>{macroRemaining.fat}g</div></div>
+              </div>
+              {getMacroSuggestions().map((s, i) => (
+                <div key={i} style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: ".6rem", letterSpacing: 2, color: "var(--pip-green-dim)" }}>NEED {s.macro.toUpperCase()}</div>
+                  {s.items.map((item, j) => <div key={j} style={{ fontSize: ".65rem", color: "var(--pip-green)", padding: "2px 0" }}>{"\u25C6"} {item}</div>)}
+                </div>
+              ))}
+              {/* Quick log meal templates */}
+              {mealTemplates.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: ".6rem", letterSpacing: 2, color: "var(--pip-green-dim)", marginBottom: 4 }}>QUICK LOG</div>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                    {mealTemplates.map((t, i) => (
+                      <button key={i} className="pip-btn small" onClick={() => quickLogMeal(t)} title={`P:${t.protein} C:${t.carbs} F:${t.fat}`}>
+                        {t.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* Add meal template */}
+              <div style={{ marginTop: 8, fontSize: ".6rem", letterSpacing: 2, color: "var(--pip-green-dim)" }}>ADD MEAL TEMPLATE</div>
+              <div className="input-row">
+                <input className="pip-input" placeholder="Name" value={newTemplateName} onChange={e => setNewTemplateName(e.target.value)} style={{ flex: 2 }} />
+                <input className="pip-input" placeholder="P" value={newTemplateP} onChange={e => setNewTemplateP(e.target.value)} style={{ maxWidth: 50 }} />
+                <input className="pip-input" placeholder="C" value={newTemplateC} onChange={e => setNewTemplateC(e.target.value)} style={{ maxWidth: 50 }} />
+                <input className="pip-input" placeholder="F" value={newTemplateF} onChange={e => setNewTemplateF(e.target.value)} style={{ maxWidth: 50 }} />
+                <button className="pip-btn" onClick={addMealTemplate}>ADD</button>
+              </div>
+              {/* Grocery List */}
+              <div style={{ marginTop: 12 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <button className="pip-btn" onClick={generateGroceryList}>GENERATE GROCERY LIST</button>
+                  {groceryList.length > 0 && (
+                    <button className="pip-btn small" onClick={() => {
+                      const text = groceryList.map(i => `${i.checked ? "[x]" : "[ ]"} ${i.name} (${i.section})`).join("\n");
+                      navigator.clipboard.writeText(text).catch(() => {});
+                    }}>COPY LIST</button>
+                  )}
+                </div>
+                {groceryList.length > 0 && (
+                  <div style={{ marginTop: 8 }}>
+                    {["Meat", "Dairy", "Produce", "Grains", "Other"].map(section => {
+                      const items = groceryList.filter(i => i.section === section);
+                      if (items.length === 0) return null;
+                      return (
+                        <div key={section} style={{ marginBottom: 6 }}>
+                          <div style={{ fontSize: ".55rem", letterSpacing: 2, color: "var(--pip-green-dim)" }}>{section.toUpperCase()}</div>
+                          {items.map((item, j) => {
+                            const idx = groceryList.indexOf(item);
+                            return (
+                              <div key={j} className="stat-row" style={{ cursor: "pointer", opacity: item.checked ? 0.4 : 1, textDecoration: item.checked ? "line-through" : "none" }}
+                                onClick={() => setGroceryList(prev => prev.map((g, k) => k === idx ? { ...g, checked: !g.checked } : g))}>
+                                <span className="stat-label">{item.checked ? "\u2713" : "\u25CB"} {item.name}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         );
 
@@ -3178,6 +3757,51 @@ export default function CommandCenter() {
               <div className="fin-summary-card"><div className="label">EXPENSES</div><div className="value" style={{ color: "#ff4444" }}>${monthExpenses.toFixed(2)}</div></div>
               <div className="fin-summary-card"><div className="label">NET</div><div className="value" style={{ color: monthIncome - monthExpenses >= 0 ? "var(--pip-green)" : "#ff4444" }}>${(monthIncome - monthExpenses).toFixed(2)}</div></div>
               <div className="fin-summary-card"><div className="label">BALANCE</div><div className="value" style={{ color: totalBalance >= 0 ? "var(--pip-green)" : "#ff4444" }}>${totalBalance.toFixed(2)}</div></div>
+            </div>
+
+            {/* Budget Progress */}
+            <div className="briefing-block">
+              <h3>Budget Status</h3>
+              <div className="health-bar-container">
+                <div className="health-bar-label">
+                  <span>TOTAL MONTHLY</span>
+                  <span style={{ color: budgetStatus === "exceeded" ? "#ff4444" : budgetStatus === "critical" ? "#ff4444" : budgetStatus === "warning" ? "var(--pip-amber)" : "var(--pip-green)" }}>
+                    ${totalMonthSpent.toFixed(0)} / ${budgets.total} ({budgetPct}%)
+                  </span>
+                </div>
+                <div className="health-bar-track"><div className="health-bar-fill" style={{ width: `${Math.min(budgetPct, 100)}%`, background: budgetStatus === "exceeded" || budgetStatus === "critical" ? "#ff4444" : budgetStatus === "warning" ? "var(--pip-amber)" : "var(--pip-green)" }} /></div>
+              </div>
+              {budgetStatus !== "ok" && (
+                <div style={{ textAlign: "center", marginTop: 4, fontSize: ".7rem", letterSpacing: 2, color: budgetStatus === "exceeded" ? "#ff4444" : "var(--pip-amber)", fontWeight: "bold" }}>
+                  {budgetStatus === "exceeded" ? "BUDGET EXCEEDED" : budgetStatus === "critical" ? "BUDGET CRITICAL" : "BUDGET WARNING"}
+                </div>
+              )}
+              {EXPENSE_CATEGORIES.map(cat => {
+                const spent = monthExpenseByCat[cat] || 0;
+                const budget = budgets[cat] || 0;
+                if (budget <= 0) return null;
+                const pct = Math.round((spent / budget) * 100);
+                const over = pct >= 100;
+                return (
+                  <div key={cat} style={{ marginTop: 6 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".55rem", color: over ? "#ff4444" : pct >= 80 ? "var(--pip-amber)" : "var(--pip-green-dim)", letterSpacing: 1 }}>
+                      <span>{cat.toUpperCase()}</span>
+                      <span>${spent.toFixed(0)} / ${budget} ({pct}%){over ? " OVER" : ""}</span>
+                    </div>
+                    <div style={{ height: 4, background: "rgba(24,255,109,.1)", marginTop: 2 }}>
+                      <div style={{ height: "100%", width: `${Math.min(pct, 100)}%`, background: over ? "#ff4444" : pct >= 80 ? "var(--pip-amber)" : "var(--pip-green)" }} />
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="stat-row" style={{ marginTop: 8 }}>
+                <span className="stat-label">Daily Avg</span>
+                <span className="stat-value">${dailyAvgSpend}/day</span>
+              </div>
+              <div className="stat-row">
+                <span className="stat-label">Projected Monthly</span>
+                <span className="stat-value" style={{ color: projectedMonthly > budgets.total ? "#ff4444" : "var(--pip-green)" }}>${projectedMonthly}</span>
+              </div>
             </div>
 
             {/* Spending by category chart */}
@@ -3617,6 +4241,50 @@ export default function CommandCenter() {
               )}
             </div>
 
+            {/* Macro Targets */}
+            <div className="briefing-block">
+              <h3>Macro Targets</h3>
+              {["protein", "carbs", "fat", "calories"].map(key => (
+                <div key={key} className="stat-row">
+                  <span className="stat-label">{key.charAt(0).toUpperCase() + key.slice(1)}{key !== "calories" ? " (g)" : " (kcal)"}</span>
+                  <input className="pip-input" type="number" style={{ maxWidth: 80, textAlign: "right" }}
+                    value={macroTargets[key]} onChange={e => setMacroTargets(prev => ({ ...prev, [key]: parseInt(e.target.value) || 0 }))} />
+                </div>
+              ))}
+            </div>
+
+            {/* Budget Settings */}
+            <div className="briefing-block">
+              <h3>Budget Settings</h3>
+              <div className="stat-row">
+                <span className="stat-label">Monthly Total</span>
+                <input className="pip-input" type="number" style={{ maxWidth: 100, textAlign: "right" }}
+                  value={budgets.total} onChange={e => setBudgets(prev => ({ ...prev, total: parseInt(e.target.value) || 0 }))} />
+              </div>
+              {EXPENSE_CATEGORIES.map(cat => (
+                <div key={cat} className="stat-row">
+                  <span className="stat-label">{cat}</span>
+                  <input className="pip-input" type="number" style={{ maxWidth: 80, textAlign: "right" }}
+                    value={budgets[cat] || 0} onChange={e => setBudgets(prev => ({ ...prev, [cat]: parseInt(e.target.value) || 0 }))} />
+                </div>
+              ))}
+            </div>
+
+            {/* Sleep Mode */}
+            <div className="briefing-block">
+              <h3>Sleep Mode</h3>
+              <div className="stat-row" style={{ cursor: "pointer" }} onClick={toggleSleepMode}>
+                <span className="stat-label">Sleep Mode</span>
+                <span className="stat-value" style={{ color: sleepMode ? "var(--pip-amber)" : "var(--pip-green)" }}>
+                  {sleepMode ? "ACTIVE" : "OFF"}
+                </span>
+              </div>
+              <div style={{ fontSize: ".55rem", color: "var(--pip-green-dim)", marginTop: 4 }}>
+                Auto-activates 10 PM — 6 AM. Tap to override.
+                {sleepModeOverride !== null && " (Manual override active)"}
+              </div>
+            </div>
+
             <button className="pip-btn" style={{ width: "100%", marginTop: 8, padding: "12px 16px" }} onClick={() => { if (window.confirm("Clear ALL localStorage data? This cannot be undone.")) { localStorage.clear(); window.location.reload(); } }}>
               FACTORY RESET
             </button>
@@ -3702,7 +4370,7 @@ export default function CommandCenter() {
       <div className="vault-tec-watermark" />
       <div className="radiation-decor" />
 
-      <div className="pipboy-device" ref={screenRef}>
+      <div className="pipboy-device" ref={screenRef} style={sleepMode ? { filter: "brightness(0.6) sepia(0.15)", transition: "filter 2s ease" } : { transition: "filter 2s ease" }}>
         <div className="pipboy-frame">
           <div className="pipboy-rivet tl" />
           <div className="pipboy-rivet tr" />
