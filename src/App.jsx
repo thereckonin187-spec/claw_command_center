@@ -364,7 +364,7 @@ const globalCSS = `
   .antenna-tick { width:4px;height:1px;background:rgba(24,255,109,.12); }
 
   /* Scrollable content area inside the frame */
-  .pipboy-screen-inner { max-height:calc(100vh - 80px);overflow-y:auto;overflow-x:hidden; }
+  .pipboy-screen-inner { max-height:calc(100vh - 130px);overflow-y:auto;overflow-x:hidden; }
   .pipboy-screen-inner::-webkit-scrollbar { width:4px; }
   .pipboy-screen-inner::-webkit-scrollbar-track { background:transparent; }
   .pipboy-screen-inner::-webkit-scrollbar-thumb { background:var(--pip-green-dim);border-radius:2px; }
