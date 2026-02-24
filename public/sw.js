@@ -1,4 +1,4 @@
-const CACHE_NAME = 'claw-cc-v1';
+const CACHE_NAME = 'cc-v2';
 const PRECACHE_URLS = [
   '/',
   '/index.html',

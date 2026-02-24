@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 
 // ─── DATA LAYER ───────────────────────────────────────────────
-const USER = { name: "Claw", role: "Hospital Construction" };
+const USER = { name: "Courier 6", role: "Hospital Construction" };
 
 const FAMILY = {
   partner: { name: "Autumn", birthday: "01-10" },
@@ -51,7 +51,7 @@ const API_KEYS = {
   ANTHROPIC: "sk-ant-api03-UXNfSHnAU_LbtJyz7FsEmcX4suPakQ712P-czJWS5Z0XiVB53MjZQlc0W7xKE8DlcuHWZHOoR_SA4viTVd6j6Q-EP7LWwA",
 };
 
-const AI_SYSTEM_PROMPT = "You are the Claw Command Center AI assistant. You speak with military-grade clarity like a Fallout Mr. Handy robot butler. You help Claw manage tasks, schedule, health, and daily operations. Keep responses concise and actionable. Address the user as Claw.";
+const AI_SYSTEM_PROMPT = "You are the Command Center AI assistant. You speak with military-grade clarity like a Fallout Mr. Handy robot butler. You help Courier 6 manage tasks, schedule, health, and daily operations. Keep responses concise and actionable. Address the user as Courier 6.";
 const PROXY_URL = "http://localhost:5111";
 const PROXY_FALLBACK = "http://localhost:5112";
 const IS_LOCAL = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
@@ -97,6 +97,20 @@ function loadStorage(key, fallback) {
   } catch { /* ignore */ }
   return fallback;
 }
+
+// Migrate localStorage keys from ccc_ to cc_ (one-time, preserves all data)
+(function migrateStorageKeys() {
+  const suffixes = ["last_reset","tasks","weights","strength","macros","news",
+    "trt_last","oura","calendar","finances","chat","daily_reports",
+    "daily_activity","meds","meds_taken","med_analysis","wellness_log","water","wellness_last"];
+  suffixes.forEach((s) => {
+    const old = localStorage.getItem(`ccc_${s}`);
+    if (old !== null && localStorage.getItem(`cc_${s}`) === null) {
+      localStorage.setItem(`cc_${s}`, old);
+      localStorage.removeItem(`ccc_${s}`);
+    }
+  });
+})();
 
 function timeAgo(dateString) {
   const now = new Date();
@@ -147,7 +161,8 @@ function migrateTasks(tasks) {
 // ─── WORKOUT ANIMATION DATA ─────────────────────────────────
 const EXERCISE_ANIM_MAP = {
   "barbell bench press": "bench", "bench press": "bench", "dumbbell bench": "bench", "incline dumbbell press": "bench",
-  "barbell squat": "squat", "front squat": "squat", "goblet squat": "squat",
+  "barbell squat": "squat", "goblet squat": "squat",
+  "front squat": "frontsquat",
   "deadlift": "deadlift", "conventional deadlift": "deadlift",
   "overhead press": "ohp", "ohp": "ohp", "military press": "ohp",
   "barbell row": "row", "seated cable row": "row", "dumbbell row": "row",
@@ -164,29 +179,33 @@ const EXERCISE_ANIM_MAP = {
   "dips": "dip", "tricep dips": "dip",
   "hip thrust": "hipthrust", "barbell hip thrust": "hipthrust",
   "ab wheel": "abwheel", "hanging leg raise": "abwheel",
-  "farmer's walk": "generic", "farmer walk": "generic",
+  "farmer's walk": "farmerwalk", "farmer walk": "farmerwalk",
+  "bulgarian split squat": "bulgariansplitsquat",
 };
 
 const FORM_CUES = {
-  bench: ["Retract scapula, arch upper back", "Bar path: slight diagonal to chest", "Drive feet into floor"],
-  squat: ["Brace core, chest up", "Knees track over toes", "Break at hips and knees together"],
-  deadlift: ["Neutral spine, engage lats", "Push floor away with legs", "Lock hips at top"],
-  ohp: ["Squeeze glutes, brace core", "Press bar in straight line", "Full lockout overhead"],
-  row: ["Squeeze shoulder blades together", "Pull to lower chest/upper belly", "Control the negative"],
-  pullup: ["Dead hang start, full ROM", "Drive elbows down and back", "Chin over bar at top"],
-  legpress: ["Full range of motion", "Don't lock knees at top", "Controlled descent"],
-  lunge: ["Keep torso upright", "Front knee tracks over ankle", "Step far enough for 90deg"],
-  curl: ["Keep elbows pinned at sides", "Full extension at bottom", "Squeeze at peak contraction"],
-  lateral: ["Slight bend in elbows", "Lead with elbows, not hands", "Control the descent"],
-  flyes: ["Slight elbow bend throughout", "Squeeze chest at top", "Feel stretch at bottom"],
-  rdl: ["Hinge at hips, soft knees", "Bar stays close to legs", "Stretch hamstrings, then squeeze glutes"],
-  legcurl: ["Full range of motion", "Squeeze hamstrings at peak", "Slow negative"],
-  calves: ["Full stretch at bottom", "Pause at top contraction", "Controlled tempo"],
-  facepull: ["Pull to face level", "Externally rotate at end", "Squeeze rear delts"],
-  dip: ["Lean slightly forward for chest", "Elbows to 90 degrees", "Full lockout at top"],
-  hipthrust: ["Drive through heels", "Squeeze glutes at top", "Chin tucked, not hyperextend"],
-  abwheel: ["Brace core tight", "Control the rollout", "Don't let hips sag"],
-  generic: ["Focus on form over weight", "Control the movement", "Full range of motion"],
+  bench: { cues: ["Retract scapula, arch upper back", "Bar path: slight diagonal to chest", "Drive feet into floor"], muscles: { primary: ["Chest", "Triceps"], secondary: ["Front Delts"] }, mistakes: ["Flared elbows past 75\u00B0", "Bouncing bar off chest"] },
+  squat: { cues: ["Brace core, chest up", "Knees track over toes", "Break at hips and knees together"], muscles: { primary: ["Quads", "Glutes"], secondary: ["Hamstrings", "Core"] }, mistakes: ["Heels rising off floor", "Knees caving inward"] },
+  deadlift: { cues: ["Neutral spine, engage lats", "Push floor away with legs", "Lock hips at top"], muscles: { primary: ["Posterior Chain", "Back"], secondary: ["Grip", "Core"] }, mistakes: ["Rounding lower back", "Jerking off the floor"] },
+  ohp: { cues: ["Squeeze glutes, brace core", "Press bar in straight line", "Full lockout overhead"], muscles: { primary: ["Shoulders", "Triceps"], secondary: ["Upper Chest", "Core"] }, mistakes: ["Excessive back lean", "Not locking out"] },
+  row: { cues: ["Squeeze shoulder blades together", "Pull to lower chest", "Control the negative"], muscles: { primary: ["Lats", "Rhomboids"], secondary: ["Biceps", "Rear Delts"] }, mistakes: ["Using momentum", "Pulling too high"] },
+  pullup: { cues: ["Dead hang start, full ROM", "Drive elbows down and back", "Chin over bar at top"], muscles: { primary: ["Lats", "Biceps"], secondary: ["Rear Delts", "Core"] }, mistakes: ["Kipping/swinging", "Half reps"] },
+  legpress: { cues: ["Full range of motion", "Don't lock knees at top", "Controlled descent"], muscles: { primary: ["Quads", "Glutes"], secondary: ["Hamstrings"] }, mistakes: ["Locking knees at top", "Lifting butt off pad"] },
+  lunge: { cues: ["Keep torso upright", "Front knee tracks over ankle", "Step far enough for 90\u00B0"], muscles: { primary: ["Quads", "Glutes"], secondary: ["Hamstrings", "Core"] }, mistakes: ["Knee past toes", "Leaning forward"] },
+  curl: { cues: ["Keep elbows pinned at sides", "Full extension at bottom", "Squeeze at peak"], muscles: { primary: ["Biceps"], secondary: ["Brachialis", "Forearms"] }, mistakes: ["Swinging body", "Moving elbows forward"] },
+  lateral: { cues: ["Slight bend in elbows", "Lead with elbows, not hands", "Control the descent"], muscles: { primary: ["Lateral Delts"], secondary: ["Traps"] }, mistakes: ["Shrugging traps", "Using momentum"] },
+  flyes: { cues: ["Slight elbow bend throughout", "Squeeze chest at top", "Feel stretch at bottom"], muscles: { primary: ["Chest"], secondary: ["Front Delts"] }, mistakes: ["Straightening arms", "Going too deep"] },
+  rdl: { cues: ["Hinge at hips, soft knees", "Bar stays close to legs", "Stretch hamstrings, squeeze glutes"], muscles: { primary: ["Hamstrings", "Glutes"], secondary: ["Erectors", "Grip"] }, mistakes: ["Rounding lower back", "Bar drifting away"] },
+  legcurl: { cues: ["Full range of motion", "Squeeze hamstrings at peak", "Slow negative"], muscles: { primary: ["Hamstrings"], secondary: ["Calves"] }, mistakes: ["Lifting hips off pad", "Partial ROM"] },
+  calves: { cues: ["Full stretch at bottom", "Pause at top contraction", "Controlled tempo"], muscles: { primary: ["Gastrocnemius", "Soleus"], secondary: [] }, mistakes: ["Bouncing at bottom", "Partial range"] },
+  facepull: { cues: ["Pull to face level", "Externally rotate at end", "Squeeze rear delts"], muscles: { primary: ["Rear Delts", "Rotator Cuff"], secondary: ["Traps", "Rhomboids"] }, mistakes: ["Pulling too low", "No external rotation"] },
+  dip: { cues: ["Lean slightly forward for chest", "Elbows to 90\u00B0", "Full lockout at top"], muscles: { primary: ["Chest", "Triceps"], secondary: ["Front Delts"] }, mistakes: ["Going too deep", "Not full lockout"] },
+  hipthrust: { cues: ["Drive through heels", "Squeeze glutes at top", "Chin tucked, don't hyperextend"], muscles: { primary: ["Glutes"], secondary: ["Hamstrings", "Core"] }, mistakes: ["Hyperextending lower back", "Not pausing at top"] },
+  abwheel: { cues: ["Brace core tight", "Control the rollout", "Don't let hips sag"], muscles: { primary: ["Core", "Abs"], secondary: ["Lats", "Shoulders"] }, mistakes: ["Hips sagging", "Going too far out"] },
+  frontsquat: { cues: ["Elbows high, upper back tight", "Sit straight down", "Drive knees out"], muscles: { primary: ["Quads", "Core"], secondary: ["Glutes", "Upper Back"] }, mistakes: ["Elbows dropping", "Rounding upper back"] },
+  bulgariansplitsquat: { cues: ["Rear foot elevated, laces down", "Front shin vertical", "Control the descent"], muscles: { primary: ["Quads", "Glutes"], secondary: ["Hamstrings", "Core"] }, mistakes: ["Rear foot too close", "Leaning forward"] },
+  farmerwalk: { cues: ["Shoulders back and down", "Tight core, tall posture", "Short quick steps"], muscles: { primary: ["Grip", "Traps", "Core"], secondary: ["Shoulders", "Legs"] }, mistakes: ["Slouching forward", "Steps too long"] },
+  generic: { cues: ["Focus on form over weight", "Control the movement", "Full range of motion"], muscles: { primary: ["Full Body"], secondary: [] }, mistakes: ["Ego lifting", "Partial reps"] },
 };
 
 function getAnimationKey(name) {
@@ -205,30 +224,35 @@ function parseSets(setsStr) {
   return { numSets: parseInt(match[1]), reps: match[2], isVariable: /amrap|\/leg|m$/i.test(match[2]) };
 }
 
+const _G = "#18ff6d", _D = "#0a9e3a", _B = "#063d18";
+const _muscDef = `<defs><radialGradient id="mg" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="${_G}" stop-opacity=".25"/><stop offset="100%" stop-color="${_G}" stop-opacity="0"/></radialGradient></defs>`;
 const EXERCISE_SVGS = {
-  bench: `<svg viewBox="0 0 160 120" xmlns="http://www.w3.org/2000/svg"><rect x="30" y="70" width="100" height="6" rx="2" fill="#0a9e3a"/><rect x="55" y="76" width="6" height="30" fill="#0a9e3a"/><rect x="99" y="76" width="6" height="30" fill="#0a9e3a"/><ellipse cx="80" cy="62" rx="8" ry="7" fill="none" stroke="#18ff6d" stroke-width="2"/><rect x="60" y="64" width="40" height="6" rx="2" fill="none" stroke="#18ff6d" stroke-width="1.5"/><g class="anim-bench-arms"><line x1="65" y1="60" x2="45" y2="35" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="95" y1="60" x2="115" y2="35" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><rect x="30" y="32" width="100" height="5" rx="2" fill="#18ff6d"/><rect x="25" y="30" width="12" height="9" rx="2" fill="#0a9e3a"/><rect x="123" y="30" width="12" height="9" rx="2" fill="#0a9e3a"/></g></svg>`,
-  squat: `<svg viewBox="0 0 160 140" xmlns="http://www.w3.org/2000/svg"><circle cx="80" cy="20" r="10" fill="none" stroke="#18ff6d" stroke-width="2"/><g class="anim-squat"><line x1="80" y1="30" x2="80" y2="65" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="65" x2="65" y2="100" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="65" x2="95" y2="100" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="65" y1="100" x2="60" y2="120" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="95" y1="100" x2="100" y2="120" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/></g><line x1="55" y1="30" x2="105" y2="30" stroke="#18ff6d" stroke-width="3" stroke-linecap="round"/><rect x="40" y="26" width="15" height="8" rx="2" fill="#0a9e3a"/><rect x="105" y="26" width="15" height="8" rx="2" fill="#0a9e3a"/><line x1="80" y1="45" x2="60" y2="35" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/><line x1="80" y1="45" x2="100" y2="35" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/></svg>`,
-  deadlift: `<svg viewBox="0 0 160 140" xmlns="http://www.w3.org/2000/svg"><circle cx="80" cy="18" r="10" fill="none" stroke="#18ff6d" stroke-width="2"/><g class="anim-deadlift"><line x1="80" y1="28" x2="80" y2="65" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="65" x2="68" y2="100" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="65" x2="92" y2="100" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="68" y1="100" x2="65" y2="120" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="92" y1="100" x2="95" y2="120" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="45" x2="65" y2="80" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/><line x1="80" y1="45" x2="95" y2="80" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/></g><line x1="45" y1="80" x2="115" y2="80" stroke="#18ff6d" stroke-width="3" stroke-linecap="round"/><rect x="35" y="76" width="15" height="8" rx="2" fill="#0a9e3a"/><rect x="110" y="76" width="15" height="8" rx="2" fill="#0a9e3a"/></svg>`,
-  ohp: `<svg viewBox="0 0 160 140" xmlns="http://www.w3.org/2000/svg"><circle cx="80" cy="30" r="10" fill="none" stroke="#18ff6d" stroke-width="2"/><line x1="80" y1="40" x2="80" y2="80" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="80" x2="68" y2="115" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="80" x2="92" y2="115" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><g class="anim-ohp"><line x1="80" y1="50" x2="60" y2="20" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/><line x1="80" y1="50" x2="100" y2="20" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/><line x1="45" y1="18" x2="115" y2="18" stroke="#18ff6d" stroke-width="3" stroke-linecap="round"/><rect x="35" y="14" width="14" height="8" rx="2" fill="#0a9e3a"/><rect x="111" y="14" width="14" height="8" rx="2" fill="#0a9e3a"/></g></svg>`,
-  row: `<svg viewBox="0 0 160 130" xmlns="http://www.w3.org/2000/svg"><circle cx="70" cy="25" r="9" fill="none" stroke="#18ff6d" stroke-width="2"/><line x1="70" y1="34" x2="85" y2="70" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="85" y1="70" x2="70" y2="105" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="85" y1="70" x2="100" y2="105" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><g class="anim-row"><line x1="78" y1="50" x2="55" y2="70" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/><line x1="78" y1="50" x2="105" y2="55" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/></g><line x1="45" y1="95" x2="115" y2="95" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><rect x="38" y="91" width="12" height="8" rx="2" fill="#0a9e3a"/><rect x="110" y="91" width="12" height="8" rx="2" fill="#0a9e3a"/></svg>`,
-  pullup: `<svg viewBox="0 0 160 140" xmlns="http://www.w3.org/2000/svg"><line x1="30" y1="15" x2="130" y2="15" stroke="#0a9e3a" stroke-width="4" stroke-linecap="round"/><rect x="28" y="10" width="4" height="130" fill="#063d18"/><rect x="128" y="10" width="4" height="130" fill="#063d18"/><g class="anim-pullup"><circle cx="80" cy="38" r="9" fill="none" stroke="#18ff6d" stroke-width="2"/><line x1="80" y1="47" x2="80" y2="85" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="85" x2="70" y2="115" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="85" x2="90" y2="115" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="55" x2="60" y2="20" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/><line x1="80" y1="55" x2="100" y2="20" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/></g></svg>`,
-  legpress: `<svg viewBox="0 0 160 120" xmlns="http://www.w3.org/2000/svg"><rect x="90" y="20" width="50" height="80" rx="3" fill="none" stroke="#0a9e3a" stroke-width="2"/><circle cx="60" cy="55" r="9" fill="none" stroke="#18ff6d" stroke-width="2"/><line x1="60" y1="64" x2="60" y2="85" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><g class="anim-legpress"><line x1="60" y1="85" x2="75" y2="70" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="75" y1="70" x2="90" y2="80" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="60" y1="85" x2="75" y2="90" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="75" y1="90" x2="90" y2="85" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/></g></svg>`,
-  lunge: `<svg viewBox="0 0 160 140" xmlns="http://www.w3.org/2000/svg"><circle cx="80" cy="20" r="9" fill="none" stroke="#18ff6d" stroke-width="2"/><line x1="80" y1="29" x2="80" y2="70" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><g class="anim-lunge"><line x1="80" y1="70" x2="60" y2="100" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="60" y1="100" x2="55" y2="125" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="70" x2="105" y2="100" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="105" y1="100" x2="110" y2="125" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/></g><line x1="80" y1="45" x2="65" y2="60" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/><line x1="80" y1="45" x2="95" y2="60" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/></svg>`,
-  curl: `<svg viewBox="0 0 160 140" xmlns="http://www.w3.org/2000/svg"><circle cx="80" cy="20" r="9" fill="none" stroke="#18ff6d" stroke-width="2"/><line x1="80" y1="29" x2="80" y2="75" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="75" x2="70" y2="115" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="75" x2="90" y2="115" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><g class="anim-curl"><line x1="80" y1="50" x2="80" y2="75" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/><line x1="80" y1="75" x2="70" y2="55" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/><rect x="65" y="50" width="10" height="6" rx="2" fill="#0a9e3a"/></g><line x1="80" y1="50" x2="95" y2="70" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/><rect x="90" y="66" width="10" height="6" rx="2" fill="#0a9e3a"/></svg>`,
-  lateral: `<svg viewBox="0 0 160 140" xmlns="http://www.w3.org/2000/svg"><circle cx="80" cy="20" r="9" fill="none" stroke="#18ff6d" stroke-width="2"/><line x1="80" y1="29" x2="80" y2="75" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="75" x2="70" y2="115" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="75" x2="90" y2="115" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><g class="anim-lateral"><line x1="80" y1="45" x2="50" y2="45" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/><line x1="80" y1="45" x2="110" y2="45" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/><rect x="43" y="42" width="8" height="6" rx="2" fill="#0a9e3a"/><rect x="109" y="42" width="8" height="6" rx="2" fill="#0a9e3a"/></g></svg>`,
-  flyes: `<svg viewBox="0 0 160 120" xmlns="http://www.w3.org/2000/svg"><rect x="30" y="65" width="100" height="5" rx="2" fill="#0a9e3a"/><circle cx="80" cy="58" r="8" fill="none" stroke="#18ff6d" stroke-width="2"/><rect x="62" y="60" width="36" height="5" rx="2" fill="none" stroke="#18ff6d" stroke-width="1.5"/><g class="anim-flyes"><line x1="68" y1="56" x2="40" y2="40" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/><line x1="92" y1="56" x2="120" y2="40" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/><rect x="34" y="36" width="8" height="6" rx="2" fill="#0a9e3a"/><rect x="118" y="36" width="8" height="6" rx="2" fill="#0a9e3a"/></g></svg>`,
-  rdl: `<svg viewBox="0 0 160 140" xmlns="http://www.w3.org/2000/svg"><circle cx="75" cy="22" r="9" fill="none" stroke="#18ff6d" stroke-width="2"/><g class="anim-rdl"><line x1="75" y1="31" x2="90" y2="65" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="85" y1="50" x2="65" y2="75" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/><line x1="85" y1="50" x2="105" y2="60" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/></g><line x1="90" y1="65" x2="80" y2="105" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="90" y1="65" x2="100" y2="105" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="50" y1="75" x2="115" y2="75" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><rect x="42" y="71" width="12" height="7" rx="2" fill="#0a9e3a"/><rect x="112" y="71" width="12" height="7" rx="2" fill="#0a9e3a"/></svg>`,
-  legcurl: `<svg viewBox="0 0 160 100" xmlns="http://www.w3.org/2000/svg"><rect x="20" y="35" width="120" height="8" rx="3" fill="#0a9e3a"/><circle cx="50" cy="30" r="8" fill="none" stroke="#18ff6d" stroke-width="2"/><rect x="55" y="30" width="50" height="6" rx="2" fill="none" stroke="#18ff6d" stroke-width="1.5"/><g class="anim-legcurl"><line x1="105" y1="33" x2="120" y2="55" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="120" y1="55" x2="105" y2="70" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/></g></svg>`,
-  calves: `<svg viewBox="0 0 160 140" xmlns="http://www.w3.org/2000/svg"><circle cx="80" cy="18" r="9" fill="none" stroke="#18ff6d" stroke-width="2"/><line x1="80" y1="27" x2="80" y2="70" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="70" x2="70" y2="100" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="70" x2="90" y2="100" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><g class="anim-calves"><line x1="70" y1="100" x2="68" y2="120" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="90" y1="100" x2="92" y2="120" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/></g><rect x="55" y="118" width="50" height="6" rx="2" fill="#0a9e3a"/><line x1="80" y1="42" x2="65" y2="55" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/><line x1="80" y1="42" x2="95" y2="55" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/></svg>`,
-  facepull: `<svg viewBox="0 0 160 130" xmlns="http://www.w3.org/2000/svg"><rect x="130" y="10" width="8" height="110" rx="2" fill="#063d18"/><line x1="134" y1="55" x2="110" y2="55" stroke="#0a9e3a" stroke-width="2"/><circle cx="70" cy="30" r="9" fill="none" stroke="#18ff6d" stroke-width="2"/><line x1="70" y1="39" x2="70" y2="80" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="70" y1="80" x2="60" y2="115" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="70" y1="80" x2="80" y2="115" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><g class="anim-facepull"><line x1="70" y1="50" x2="90" y2="35" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/><line x1="70" y1="55" x2="90" y2="45" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/></g></svg>`,
-  dip: `<svg viewBox="0 0 160 140" xmlns="http://www.w3.org/2000/svg"><line x1="30" y1="50" x2="60" y2="50" stroke="#0a9e3a" stroke-width="4" stroke-linecap="round"/><line x1="100" y1="50" x2="130" y2="50" stroke="#0a9e3a" stroke-width="4" stroke-linecap="round"/><circle cx="80" cy="35" r="9" fill="none" stroke="#18ff6d" stroke-width="2"/><g class="anim-dip"><line x1="80" y1="44" x2="80" y2="80" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="55" x2="60" y2="50" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/><line x1="80" y1="55" x2="100" y2="50" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/><line x1="80" y1="80" x2="70" y2="110" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="80" x2="90" y2="110" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/></g></svg>`,
-  hipthrust: `<svg viewBox="0 0 160 100" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="50" width="40" height="30" rx="3" fill="#0a9e3a"/><circle cx="40" cy="40" r="8" fill="none" stroke="#18ff6d" stroke-width="2"/><g class="anim-hipthrust"><line x1="45" y1="48" x2="80" y2="40" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="40" x2="100" y2="60" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="100" y1="60" x2="95" y2="85" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="40" x2="110" y2="55" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="110" y1="55" x2="115" y2="85" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/></g></svg>`,
-  abwheel: `<svg viewBox="0 0 160 100" xmlns="http://www.w3.org/2000/svg"><circle cx="80" cy="75" r="12" fill="none" stroke="#0a9e3a" stroke-width="3"/><line x1="74" y1="75" x2="86" y2="75" stroke="#18ff6d" stroke-width="2"/><g class="anim-abwheel"><circle cx="55" cy="40" r="8" fill="none" stroke="#18ff6d" stroke-width="2"/><line x1="55" y1="48" x2="65" y2="68" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="55" y1="48" x2="75" y2="70" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/><line x1="65" y1="68" x2="55" y2="88" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="65" y1="68" x2="75" y2="88" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/></g></svg>`,
-  generic: `<svg viewBox="0 0 160 140" xmlns="http://www.w3.org/2000/svg"><circle cx="80" cy="20" r="10" fill="none" stroke="#18ff6d" stroke-width="2"/><g class="anim-generic"><line x1="80" y1="30" x2="80" y2="75" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="50" x2="55" y2="65" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/><line x1="80" y1="50" x2="105" y2="65" stroke="#18ff6d" stroke-width="2" stroke-linecap="round"/><line x1="80" y1="75" x2="65" y2="115" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="75" x2="95" y2="115" stroke="#18ff6d" stroke-width="2.5" stroke-linecap="round"/></g></svg>`,
+  bench: `<svg viewBox="0 0 200 250" xmlns="http://www.w3.org/2000/svg">${_muscDef}<rect x="35" y="135" width="130" height="8" rx="3" fill="${_D}"/><rect x="60" y="143" width="8" height="40" fill="${_D}"/><rect x="132" y="143" width="8" height="40" fill="${_D}"/><!-- body on bench --><ellipse cx="100" cy="120" rx="12" ry="10" fill="none" stroke="${_G}" stroke-width="2"/><path d="M82,125 Q80,135 82,155 L100,160 L118,155 Q120,135 118,125 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M92,132 Q100,138 108,132" fill="none" stroke="${_G}" stroke-width=".8" opacity=".5"/><path d="M100,160 L88,200 L85,230" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M100,160 L112,200 L115,230" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><g class="anim-bench-arms"><path d="M84,128 Q70,115 60,95 L55,80" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M116,128 Q130,115 140,95 L145,80" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><rect x="35" y="76" width="130" height="6" rx="2" fill="${_G}"/><rect x="25" y="73" width="16" height="12" rx="3" fill="${_D}"/><rect x="159" y="73" width="16" height="12" rx="3" fill="${_D}"/><line x1="55" y1="72" x2="50" y2="68" stroke="${_G}" stroke-width="1" opacity=".4"/><line x1="145" y1="72" x2="150" y2="68" stroke="${_G}" stroke-width="1" opacity=".4"/></g></svg>`,
+  squat: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<g class="anim-squat"><ellipse cx="100" cy="28" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="42" x2="100" y2="52" stroke="${_G}" stroke-width="2.5"/><path d="M82,52 Q78,72 80,100 L85,130 L100,135 L115,130 L120,100 Q122,72 118,52 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M90,65 Q100,72 110,65" fill="none" stroke="${_G}" stroke-width=".8" opacity=".5"/><path d="M92,85 L92,110" fill="none" stroke="${_G}" stroke-width=".6" opacity=".4"/><path d="M108,85 L108,110" fill="none" stroke="${_G}" stroke-width=".6" opacity=".4"/><path d="M82,55 Q70,60 65,75 L68,90" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M118,55 Q130,60 135,75 L132,90" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M90,132 Q80,160 76,190" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M76,190 Q74,215 72,245" fill="none" stroke="${_G}" stroke-width="2.4" stroke-linecap="round"/><path d="M72,245 L65,260 L80,260" fill="none" stroke="${_G}" stroke-width="1.8"/><path d="M110,132 Q120,160 124,190" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M124,190 Q126,215 128,245" fill="none" stroke="${_G}" stroke-width="2.4" stroke-linecap="round"/><path d="M128,245 L135,260 L120,260" fill="none" stroke="${_G}" stroke-width="1.8"/></g><line x1="48" y1="48" x2="152" y2="48" stroke="${_G}" stroke-width="3.5" stroke-linecap="round"/><rect x="35" y="42" width="18" height="12" rx="3" fill="${_D}"/><rect x="147" y="42" width="18" height="12" rx="3" fill="${_D}"/></svg>`,
+  deadlift: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<g class="anim-deadlift"><ellipse cx="100" cy="30" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="44" x2="100" y2="54" stroke="${_G}" stroke-width="2.5"/><path d="M82,54 Q78,74 80,100 L85,130 L100,135 L115,130 L120,100 Q122,74 118,54 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M82,56 Q72,65 65,85 L62,110" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M62,110 L65,135 L70,140" fill="none" stroke="${_G}" stroke-width="2" stroke-linecap="round"/><path d="M118,56 Q128,65 135,85 L138,110" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M138,110 L135,135 L130,140" fill="none" stroke="${_G}" stroke-width="2" stroke-linecap="round"/><path d="M90,132 Q82,158 78,190" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M78,190 L75,220 L73,248" fill="none" stroke="${_G}" stroke-width="2.4" stroke-linecap="round"/><path d="M73,248 L66,262 L80,262" fill="none" stroke="${_G}" stroke-width="1.8"/><path d="M110,132 Q118,158 122,190" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M122,190 L125,220 L127,248" fill="none" stroke="${_G}" stroke-width="2.4" stroke-linecap="round"/><path d="M127,248 L134,262 L120,262" fill="none" stroke="${_G}" stroke-width="1.8"/></g><line x1="42" y1="140" x2="158" y2="140" stroke="${_G}" stroke-width="3.5" stroke-linecap="round"/><rect x="28" y="134" width="20" height="12" rx="3" fill="${_D}"/><rect x="152" y="134" width="20" height="12" rx="3" fill="${_D}"/></svg>`,
+  ohp: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<ellipse cx="100" cy="50" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="64" x2="100" y2="74" stroke="${_G}" stroke-width="2.5"/><path d="M82,74 Q78,94 80,120 L85,150 L100,155 L115,150 L120,120 Q122,94 118,74 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M100,155 L88,200 L85,245 L78,262 L92,262" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M100,155 L112,200 L115,245 L122,262 L108,262" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><g class="anim-ohp"><path d="M82,76 Q68,72 60,55 L58,35" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M58,35 L55,18" fill="none" stroke="${_G}" stroke-width="2" stroke-linecap="round"/><path d="M118,76 Q132,72 140,55 L142,35" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M142,35 L145,18" fill="none" stroke="${_G}" stroke-width="2" stroke-linecap="round"/><line x1="38" y1="16" x2="162" y2="16" stroke="${_G}" stroke-width="3.5" stroke-linecap="round"/><rect x="25" y="10" width="18" height="12" rx="3" fill="${_D}"/><rect x="157" y="10" width="18" height="12" rx="3" fill="${_D}"/></g></svg>`,
+  row: `<svg viewBox="0 0 200 260" xmlns="http://www.w3.org/2000/svg">${_muscDef}<ellipse cx="80" cy="40" rx="11" ry="13" fill="none" stroke="${_G}" stroke-width="2"/><path d="M80,53 L100,110" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M68,60 Q62,80 64,110 L68,130 L80,135 L92,130 L96,110 Q98,80 92,60 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.5" transform="rotate(25,80,95)"/><path d="M100,110 L88,160 L82,210 L78,240" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M100,110 L108,160 L112,210 L115,240" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><g class="anim-row"><path d="M85,75 Q70,85 55,105 L50,120" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M92,75 Q110,80 125,90 L130,105" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/></g><line x1="35" y1="155" x2="155" y2="155" stroke="${_G}" stroke-width="3" stroke-linecap="round"/><rect x="22" y="149" width="18" height="12" rx="3" fill="${_D}"/><rect x="150" y="149" width="18" height="12" rx="3" fill="${_D}"/></svg>`,
+  pullup: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<line x1="30" y1="18" x2="170" y2="18" stroke="${_D}" stroke-width="5" stroke-linecap="round"/><rect x="26" y="12" width="6" height="268" fill="${_B}"/><rect x="168" y="12" width="6" height="268" fill="${_B}"/><g class="anim-pullup"><ellipse cx="100" cy="55" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="69" x2="100" y2="79" stroke="${_G}" stroke-width="2.5"/><path d="M82,79 Q78,99 80,125 L85,155 L100,160 L115,155 L120,125 Q122,99 118,79 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M82,82 Q65,65 55,30 L54,22" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M118,82 Q135,65 145,30 L146,22" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M100,160 L90,205 L85,250" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M100,160 L110,205 L115,250" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/></g></svg>`,
+  legpress: `<svg viewBox="0 0 200 220" xmlns="http://www.w3.org/2000/svg">${_muscDef}<rect x="120" y="20" width="60" height="180" rx="4" fill="none" stroke="${_D}" stroke-width="2.5"/><line x1="150" y1="20" x2="150" y2="200" stroke="${_D}" stroke-width="1" opacity=".3"/><ellipse cx="65" cy="80" rx="11" ry="13" fill="none" stroke="${_G}" stroke-width="2"/><path d="M55,93 L55,140" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M48,95 Q44,110 46,130 L50,150 L65,155 L80,150 L84,130 Q86,110 82,95 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.5"/><g class="anim-legpress"><path d="M65,150 Q80,130 95,115 L120,105" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M65,155 Q82,148 98,135 L120,130" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/></g></svg>`,
+  lunge: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<ellipse cx="100" cy="28" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="42" x2="100" y2="52" stroke="${_G}" stroke-width="2.5"/><path d="M84,52 Q80,72 82,100 L86,128 L100,133 L114,128 L118,100 Q120,72 116,52 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M84,55 L68,72 L60,82" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M116,55 L132,72 L140,82" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><g class="anim-lunge"><path d="M92,130 Q75,158 62,190 L55,220 L50,255" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M50,255 L42,268 L58,268" fill="none" stroke="${_G}" stroke-width="1.8"/><path d="M108,130 Q125,158 135,190 L138,220 L140,255" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M140,255 L148,268 L132,268" fill="none" stroke="${_G}" stroke-width="1.8"/></g></svg>`,
+  curl: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<ellipse cx="100" cy="28" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="42" x2="100" y2="52" stroke="${_G}" stroke-width="2.5"/><path d="M84,52 Q80,72 82,100 L86,128 L100,133 L114,128 L118,100 Q120,72 116,52 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M100,133 L90,180 L86,230 L80,258 L92,258" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M100,133 L110,180 L114,230 L120,258 L108,258" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M116,55 L132,70 L138,95 L135,115" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><rect x="130" y="112" width="12" height="8" rx="3" fill="${_D}"/><g class="anim-curl"><path d="M84,55 L68,65 L62,80 L60,95" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M60,95 L62,75 L68,60" fill="none" stroke="${_G}" stroke-width="2" stroke-linecap="round"/><rect x="58" y="55" width="14" height="8" rx="3" fill="${_D}"/></g></svg>`,
+  lateral: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<ellipse cx="100" cy="28" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="42" x2="100" y2="52" stroke="${_G}" stroke-width="2.5"/><path d="M84,52 Q80,72 82,100 L86,128 L100,133 L114,128 L118,100 Q120,72 116,52 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M100,133 L90,180 L86,230 L80,258 L92,258" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M100,133 L110,180 L114,230 L120,258 L108,258" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><g class="anim-lateral"><path d="M84,56 L55,52 L35,55" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M116,56 L145,52 L165,55" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><rect x="25" y="50" width="12" height="8" rx="3" fill="${_D}"/><rect x="163" y="50" width="12" height="8" rx="3" fill="${_D}"/></g></svg>`,
+  flyes: `<svg viewBox="0 0 200 220" xmlns="http://www.w3.org/2000/svg">${_muscDef}<rect x="35" y="120" width="130" height="8" rx="3" fill="${_D}"/><ellipse cx="100" cy="108" rx="12" ry="10" fill="none" stroke="${_G}" stroke-width="2"/><path d="M82,112 Q80,122 82,140 L100,148 L118,140 Q120,122 118,112 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.5"/><path d="M100,148 L88,180 L85,210" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M100,148 L112,180 L115,210" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><g class="anim-flyes"><path d="M84,114 Q65,100 45,80 L35,68" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M116,114 Q135,100 155,80 L165,68" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><rect x="28" y="63" width="12" height="8" rx="3" fill="${_D}"/><rect x="160" y="63" width="12" height="8" rx="3" fill="${_D}"/></g></svg>`,
+  rdl: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<g class="anim-rdl"><ellipse cx="85" cy="35" rx="11" ry="13" fill="none" stroke="${_G}" stroke-width="2"/><path d="M85,48 L105,105" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M75,55 Q70,75 72,100 L76,125 L88,130 L100,125 L104,100 Q106,75 101,55 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.5" transform="rotate(20,88,90)"/><path d="M90,70 Q75,80 62,100 L55,120" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M98,70 Q115,75 130,85 L135,100" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/></g><path d="M105,105 L95,160 L90,210 L86,250" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M105,105 L115,160 L118,210 L120,250" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><line x1="35" y1="120" x2="165" y2="120" stroke="${_G}" stroke-width="3" stroke-linecap="round"/><rect x="22" y="114" width="18" height="12" rx="3" fill="${_D}"/><rect x="160" y="114" width="18" height="12" rx="3" fill="${_D}"/></svg>`,
+  legcurl: `<svg viewBox="0 0 200 180" xmlns="http://www.w3.org/2000/svg">${_muscDef}<rect x="20" y="60" width="160" height="10" rx="4" fill="${_D}"/><ellipse cx="55" cy="48" rx="10" ry="12" fill="none" stroke="${_G}" stroke-width="2"/><path d="M65,52 Q70,58 70,70 L115,70 L115,55 Q115,52 112,50 L68,50 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.5"/><g class="anim-legcurl"><path d="M115,58 Q135,60 148,72 L155,90" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M155,90 L145,115 L130,130" fill="none" stroke="${_G}" stroke-width="2.4" stroke-linecap="round"/></g></svg>`,
+  calves: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<ellipse cx="100" cy="28" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="42" x2="100" y2="52" stroke="${_G}" stroke-width="2.5"/><path d="M84,52 Q80,72 82,100 L86,128 L100,133 L114,128 L118,100 Q120,72 116,52 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M84,55 L68,70 L60,80" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M116,55 L132,70 L140,80" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M92,130 L86,170 L82,200" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M108,130 L114,170 L118,200" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><g class="anim-calves"><path d="M82,200 Q80,220 78,242" fill="none" stroke="${_G}" stroke-width="2.4" stroke-linecap="round"/><path d="M118,200 Q120,220 122,242" fill="none" stroke="${_G}" stroke-width="2.4" stroke-linecap="round"/><path d="M78,242 L72,258 L88,258" fill="none" stroke="${_G}" stroke-width="1.8"/><path d="M122,242 L128,258 L112,258" fill="none" stroke="${_G}" stroke-width="1.8"/></g><rect x="60" y="256" width="80" height="6" rx="2" fill="${_D}"/></svg>`,
+  facepull: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<rect x="168" y="10" width="10" height="260" rx="3" fill="${_B}"/><line x1="173" y1="80" x2="150" y2="80" stroke="${_D}" stroke-width="2.5"/><ellipse cx="80" cy="40" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="80" y1="54" x2="80" y2="64" stroke="${_G}" stroke-width="2.5"/><path d="M64,64 Q60,84 62,110 L66,138 L80,143 L94,138 L98,110 Q100,84 96,64 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M80,143 L70,190 L66,240 L60,262 L76,262" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M80,143 L90,190 L94,240 L100,262 L84,262" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><g class="anim-facepull"><path d="M96,68 L115,55 L135,48 L148,50" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M96,74 L115,65 L135,60 L148,62" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/></g></svg>`,
+  dip: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<line x1="20" y1="85" x2="75" y2="85" stroke="${_D}" stroke-width="5" stroke-linecap="round"/><line x1="125" y1="85" x2="180" y2="85" stroke="${_D}" stroke-width="5" stroke-linecap="round"/><g class="anim-dip"><ellipse cx="100" cy="55" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="69" x2="100" y2="79" stroke="${_G}" stroke-width="2.5"/><path d="M84,79 Q80,99 82,125 L86,153 L100,158 L114,153 L118,125 Q120,99 116,79 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M84,82 Q70,82 62,85 L58,85" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M116,82 Q130,82 138,85 L142,85" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M100,158 L90,205 L85,250" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M100,158 L110,205 L115,250" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/></g></svg>`,
+  hipthrust: `<svg viewBox="0 0 200 180" xmlns="http://www.w3.org/2000/svg">${_muscDef}<rect x="10" y="80" width="50" height="40" rx="4" fill="${_D}"/><ellipse cx="52" cy="65" rx="10" ry="12" fill="none" stroke="${_G}" stroke-width="2"/><g class="anim-hipthrust"><path d="M55,77 Q70,72 90,65 L110,60" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M50,80 Q60,82 75,80 L110,65" fill="url(#mg)" stroke="${_G}" stroke-width="1.5"/><path d="M110,60 Q125,70 135,88 L138,110 L132,140" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M110,65 Q130,78 142,95 L148,118 L145,148" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/></g></svg>`,
+  abwheel: `<svg viewBox="0 0 200 180" xmlns="http://www.w3.org/2000/svg">${_muscDef}<circle cx="130" cy="135" r="18" fill="none" stroke="${_D}" stroke-width="4"/><line x1="118" y1="135" x2="142" y2="135" stroke="${_G}" stroke-width="2.5"/><g class="anim-abwheel"><ellipse cx="60" cy="60" rx="11" ry="13" fill="none" stroke="${_G}" stroke-width="2"/><path d="M60,73 L80,110 L110,130" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M52,70 Q46,85 48,105 L52,125 L65,130 L78,125 L82,105 Q84,85 78,70 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.3" transform="rotate(30,65,100)"/><path d="M60,73 L78,90 L112,128" fill="none" stroke="${_G}" stroke-width="2" stroke-linecap="round"/><path d="M80,110 L65,145 L58,160" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M80,110 L85,145 L88,160" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/></g></svg>`,
+  frontsquat: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<g class="anim-frontsquat"><ellipse cx="100" cy="28" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="42" x2="100" y2="52" stroke="${_G}" stroke-width="2.5"/><path d="M82,52 Q78,72 80,100 L85,130 L100,135 L115,130 L120,100 Q122,72 118,52 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M82,55 Q68,60 62,72 L60,82" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M118,55 Q132,60 138,72 L140,82" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M90,132 Q80,160 76,190 L74,220 L72,248" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M72,248 L65,262 L80,262" fill="none" stroke="${_G}" stroke-width="1.8"/><path d="M110,132 Q120,160 124,190 L126,220 L128,248" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M128,248 L135,262 L120,262" fill="none" stroke="${_G}" stroke-width="1.8"/></g><line x1="50" y1="68" x2="150" y2="68" stroke="${_G}" stroke-width="3.5" stroke-linecap="round"/><rect x="37" y="62" width="18" height="12" rx="3" fill="${_D}"/><rect x="145" y="62" width="18" height="12" rx="3" fill="${_D}"/></svg>`,
+  bulgariansplitsquat: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<rect x="140" y="170" width="45" height="30" rx="4" fill="${_D}"/><ellipse cx="90" cy="28" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="90" y1="42" x2="90" y2="52" stroke="${_G}" stroke-width="2.5"/><path d="M74,52 Q70,72 72,100 L76,128 L90,133 L104,128 L108,100 Q110,72 106,52 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M74,55 L58,70 L52,82" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M106,55 L122,70 L128,82" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><g class="anim-bulgariansplitsquat"><path d="M82,130 Q68,160 58,195 L52,230 L48,258" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M48,258 L40,270 L56,270" fill="none" stroke="${_G}" stroke-width="1.8"/><path d="M98,130 Q115,150 130,168 L142,175" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/></g></svg>`,
+  farmerwalk: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<g class="anim-farmerwalk"><ellipse cx="100" cy="28" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="42" x2="100" y2="52" stroke="${_G}" stroke-width="2.5"/><path d="M84,52 Q80,72 82,100 L86,128 L100,133 L114,128 L118,100 Q120,72 116,52 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M84,55 L68,70 L58,95 L55,120 L55,145" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M116,55 L132,70 L142,95 L145,120 L145,145" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><rect x="48" y="142" width="16" height="10" rx="3" fill="${_D}"/><rect x="138" y="142" width="16" height="10" rx="3" fill="${_D}"/><path d="M92,130 Q82,160 78,195 L75,230 L72,255" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M72,255 L65,268 L80,268" fill="none" stroke="${_G}" stroke-width="1.8"/><path d="M108,130 Q118,160 122,195 L125,230 L128,255" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M128,255 L135,268 L120,268" fill="none" stroke="${_G}" stroke-width="1.8"/></g></svg>`,
+  generic: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<ellipse cx="100" cy="28" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="42" x2="100" y2="52" stroke="${_G}" stroke-width="2.5"/><g class="anim-generic"><path d="M84,52 Q80,72 82,100 L86,128 L100,133 L114,128 L118,100 Q120,72 116,52 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M84,55 L62,70 L50,85" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M116,55 L138,70 L150,85" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M92,130 Q82,160 78,195 L75,230 L72,255" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M72,255 L65,268 L80,268" fill="none" stroke="${_G}" stroke-width="1.8"/><path d="M108,130 Q118,160 122,195 L125,230 L128,255" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M128,255 L135,268 L120,268" fill="none" stroke="${_G}" stroke-width="1.8"/></g></svg>`,
 };
 
 function autoResetTasks(tasks) {
-  const lastReset = loadStorage("ccc_last_reset", null);
+  const lastReset = loadStorage("cc_last_reset", null);
   const todayStr = localDate;
   const thisWeek = getWeekStart(today);
   const thisMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
@@ -238,7 +262,7 @@ function autoResetTasks(tasks) {
     if (lastReset.week !== thisWeek) updated = updated.map((t) => t.category === "weekly" ? { ...t, done: false } : t);
     if (lastReset.month !== thisMonth) updated = updated.map((t) => t.category === "monthly" ? { ...t, done: false } : t);
   }
-  localStorage.setItem("ccc_last_reset", JSON.stringify({ day: todayStr, week: thisWeek, month: thisMonth }));
+  localStorage.setItem("cc_last_reset", JSON.stringify({ day: todayStr, week: thisWeek, month: thisMonth }));
   return updated;
 }
 
@@ -518,7 +542,7 @@ const globalCSS = `
   .workout-exercise-name { font-size:1.1rem;letter-spacing:3px;text-transform:uppercase;color:var(--pip-green);text-shadow:var(--pip-text-glow);margin-bottom:8px; }
   .workout-set-info { font-size:.75rem;color:var(--pip-green-dim);letter-spacing:2px;margin-bottom:12px; }
   .workout-animation { display:flex;justify-content:center;margin:16px 0; }
-  .workout-animation svg { width:160px;height:140px; }
+  .workout-animation svg { width:200px;height:250px; }
   .workout-cues { border:1px solid rgba(24,255,109,.1);background:rgba(10,30,15,.3);padding:12px;margin-bottom:16px; }
   .workout-cue-item { font-size:.7rem;color:var(--pip-green-dim);padding:3px 0;letter-spacing:1px; }
   .workout-cue-item::before { content:'> ';color:var(--pip-green); }
@@ -539,6 +563,12 @@ const globalCSS = `
   .rest-timer-overlay { position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:50; }
   .rest-timer-value { font-size:4rem;color:var(--pip-amber);text-shadow:0 0 30px rgba(255,182,49,.6);font-family:'Share Tech Mono',monospace;letter-spacing:6px; }
   .rest-timer-label { font-size:.8rem;color:var(--pip-green-dim);letter-spacing:4px;margin-top:12px;text-transform:uppercase; }
+  .rest-timer-circle { width:180px;height:180px;position:relative;margin-bottom:16px; }
+  .rest-timer-circle svg { width:180px;height:180px;transform:rotate(-90deg); }
+  .rest-timer-circle circle { fill:none;stroke-width:4; }
+  .rest-timer-circle .track { stroke:rgba(24,255,109,.1); }
+  .rest-timer-circle .progress { stroke:var(--pip-amber);stroke-linecap:round;filter:drop-shadow(0 0 6px rgba(255,182,49,.5));transition:stroke-dashoffset 1s linear; }
+  .rest-timer-circle .timer-text { position:absolute;top:50%;left:50%;transform:translate(-50%,-50%); }
 
   /* Report Modal */
   .report-modal-overlay { position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.88);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px; }
@@ -564,45 +594,52 @@ const globalCSS = `
   .report-history-item:hover { background:rgba(24,255,109,.08);border-color:rgba(24,255,109,.3); }
 
   /* Workout animations */
-  @keyframes benchArms { 0%,100%{transform:translateY(0)}50%{transform:translateY(-15px)} }
-  @keyframes squatDown { 0%,100%{transform:translateY(0)}50%{transform:translateY(20px)} }
-  @keyframes deadliftPull { 0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-10px) rotate(-5deg)} }
-  @keyframes ohpArms { 0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)} }
-  @keyframes rowPull { 0%,100%{transform:translateX(0)}50%{transform:translateX(-10px)} }
-  @keyframes pullupBody { 0%,100%{transform:translateY(0)}50%{transform:translateY(-18px)} }
-  @keyframes legpressLegs { 0%,100%{transform:translateX(0)}50%{transform:translateX(8px)} }
-  @keyframes lungeDown { 0%,100%{transform:translateY(0)}50%{transform:translateY(12px)} }
-  @keyframes curlArm { 0%,100%{transform:rotate(0deg)}50%{transform:rotate(-20deg)} }
-  @keyframes lateralRaise { 0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)} }
-  @keyframes flyesArms { 0%,100%{transform:rotate(0deg)}50%{transform:rotate(15deg)} }
-  @keyframes rdlHinge { 0%,100%{transform:rotate(0deg)}50%{transform:rotate(15deg)} }
-  @keyframes legcurlBend { 0%,100%{transform:rotate(0deg)}50%{transform:rotate(-30deg)} }
-  @keyframes calvesRaise { 0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)} }
-  @keyframes facepullArms { 0%,100%{transform:translateX(0)}50%{transform:translateX(-12px)} }
-  @keyframes dipBody { 0%,100%{transform:translateY(0)}50%{transform:translateY(15px)} }
-  @keyframes hipThrustUp { 0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)} }
-  @keyframes abwheelRoll { 0%,100%{transform:translateX(0)}50%{transform:translateX(15px)} }
-  @keyframes genericMove { 0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)} }
+  /* Enhanced multi-step workout keyframes */
+  @keyframes benchArms { 0%{transform:translateY(0)}10%{transform:translateY(2px)}45%{transform:translateY(-22px)}55%{transform:translateY(-22px)}90%{transform:translateY(-2px)}100%{transform:translateY(0)} }
+  @keyframes squatDown { 0%{transform:translateY(0) scaleY(1)}10%{transform:translateY(2px)}40%{transform:translateY(28px) scaleY(.88)}52%{transform:translateY(28px) scaleY(.88)}85%{transform:translateY(3px)}100%{transform:translateY(0) scaleY(1)} }
+  @keyframes deadliftPull { 0%{transform:translateY(0) rotate(0)}10%{transform:translateY(1px)}48%{transform:translateY(-16px) rotate(-7deg)}58%{transform:translateY(-16px) rotate(-7deg)}90%{transform:translateY(-2px) rotate(-1deg)}100%{transform:translateY(0) rotate(0)} }
+  @keyframes ohpArms { 0%{transform:translateY(0)}10%{transform:translateY(1px)}42%{transform:translateY(-18px)}54%{transform:translateY(-18px)}88%{transform:translateY(-2px)}100%{transform:translateY(0)} }
+  @keyframes rowPull { 0%{transform:translateX(0)}10%{transform:translateX(1px)}42%{transform:translateX(-14px)}54%{transform:translateX(-14px)}88%{transform:translateX(-2px)}100%{transform:translateX(0)} }
+  @keyframes pullupBody { 0%{transform:translateY(0)}10%{transform:translateY(1px)}45%{transform:translateY(-22px)}55%{transform:translateY(-22px)}88%{transform:translateY(-2px)}100%{transform:translateY(0)} }
+  @keyframes legpressLegs { 0%{transform:translateX(0)}10%{transform:translateX(1px)}42%{transform:translateX(12px)}54%{transform:translateX(12px)}88%{transform:translateX(1px)}100%{transform:translateX(0)} }
+  @keyframes lungeDown { 0%{transform:translateY(0)}10%{transform:translateY(2px)}42%{transform:translateY(18px)}54%{transform:translateY(18px)}88%{transform:translateY(2px)}100%{transform:translateY(0)} }
+  @keyframes curlArm { 0%{transform:rotate(0)}10%{transform:rotate(-2deg)}42%{transform:rotate(-25deg)}54%{transform:rotate(-25deg)}88%{transform:rotate(-2deg)}100%{transform:rotate(0)} }
+  @keyframes lateralRaise { 0%{transform:translateY(0)}10%{transform:translateY(1px)}42%{transform:translateY(-15px)}54%{transform:translateY(-15px)}88%{transform:translateY(-1px)}100%{transform:translateY(0)} }
+  @keyframes flyesArms { 0%{transform:rotate(0)}10%{transform:rotate(2deg)}42%{transform:rotate(18deg)}54%{transform:rotate(18deg)}88%{transform:rotate(2deg)}100%{transform:rotate(0)} }
+  @keyframes rdlHinge { 0%{transform:rotate(0)}10%{transform:rotate(1deg)}45%{transform:rotate(18deg)}55%{transform:rotate(18deg)}88%{transform:rotate(2deg)}100%{transform:rotate(0)} }
+  @keyframes legcurlBend { 0%{transform:rotate(0)}10%{transform:rotate(-2deg)}42%{transform:rotate(-35deg)}54%{transform:rotate(-35deg)}88%{transform:rotate(-2deg)}100%{transform:rotate(0)} }
+  @keyframes calvesRaise { 0%{transform:translateY(0)}12%{transform:translateY(1px)}40%{transform:translateY(-10px)}55%{transform:translateY(-10px)}85%{transform:translateY(-1px)}100%{transform:translateY(0)} }
+  @keyframes facepullArms { 0%{transform:translateX(0)}10%{transform:translateX(1px)}42%{transform:translateX(-16px)}54%{transform:translateX(-16px)}88%{transform:translateX(-2px)}100%{transform:translateX(0)} }
+  @keyframes dipBody { 0%{transform:translateY(0)}10%{transform:translateY(2px)}45%{transform:translateY(18px)}55%{transform:translateY(18px)}88%{transform:translateY(2px)}100%{transform:translateY(0)} }
+  @keyframes hipThrustUp { 0%{transform:translateY(0)}10%{transform:translateY(1px)}42%{transform:translateY(-12px)}54%{transform:translateY(-12px)}88%{transform:translateY(-1px)}100%{transform:translateY(0)} }
+  @keyframes abwheelRoll { 0%{transform:translateX(0)}10%{transform:translateX(2px)}45%{transform:translateX(18px)}55%{transform:translateX(18px)}88%{transform:translateX(2px)}100%{transform:translateX(0)} }
+  @keyframes frontSquatDown { 0%{transform:translateY(0) scaleY(1)}10%{transform:translateY(2px)}40%{transform:translateY(25px) scaleY(.9)}52%{transform:translateY(25px) scaleY(.9)}85%{transform:translateY(3px)}100%{transform:translateY(0) scaleY(1)} }
+  @keyframes bulgarianSplitDown { 0%{transform:translateY(0)}10%{transform:translateY(2px)}42%{transform:translateY(22px)}54%{transform:translateY(22px)}88%{transform:translateY(2px)}100%{transform:translateY(0)} }
+  @keyframes farmerStep { 0%{transform:translateX(0) translateY(0)}25%{transform:translateX(5px) translateY(-4px)}50%{transform:translateX(10px) translateY(0)}75%{transform:translateX(5px) translateY(-4px)}100%{transform:translateX(0) translateY(0)} }
+  @keyframes genericMove { 0%{transform:translateY(0)}10%{transform:translateY(1px)}42%{transform:translateY(-10px)}54%{transform:translateY(-10px)}88%{transform:translateY(-1px)}100%{transform:translateY(0)} }
 
-  .anim-bench-arms { animation:benchArms 2s ease-in-out infinite; transform-origin:center; }
-  .anim-squat { animation:squatDown 2.5s ease-in-out infinite; transform-origin:center top; }
-  .anim-deadlift { animation:deadliftPull 2.5s ease-in-out infinite; transform-origin:center bottom; }
-  .anim-ohp { animation:ohpArms 2s ease-in-out infinite; transform-origin:center; }
-  .anim-row { animation:rowPull 2s ease-in-out infinite; transform-origin:right center; }
-  .anim-pullup { animation:pullupBody 2.5s ease-in-out infinite; transform-origin:center top; }
-  .anim-legpress { animation:legpressLegs 2s ease-in-out infinite; transform-origin:left center; }
-  .anim-lunge { animation:lungeDown 2.5s ease-in-out infinite; transform-origin:center top; }
-  .anim-curl { animation:curlArm 1.8s ease-in-out infinite; transform-origin:80px 50px; }
-  .anim-lateral { animation:lateralRaise 2s ease-in-out infinite; transform-origin:center; }
-  .anim-flyes { animation:flyesArms 2.2s ease-in-out infinite; transform-origin:center; }
-  .anim-rdl { animation:rdlHinge 2.5s ease-in-out infinite; transform-origin:center bottom; }
-  .anim-legcurl { animation:legcurlBend 2s ease-in-out infinite; transform-origin:105px 33px; }
-  .anim-calves { animation:calvesRaise 1.5s ease-in-out infinite; transform-origin:center bottom; }
-  .anim-facepull { animation:facepullArms 2s ease-in-out infinite; transform-origin:right center; }
-  .anim-dip { animation:dipBody 2.5s ease-in-out infinite; transform-origin:center top; }
-  .anim-hipthrust { animation:hipThrustUp 2s ease-in-out infinite; transform-origin:left center; }
-  .anim-abwheel { animation:abwheelRoll 2.5s ease-in-out infinite; transform-origin:left center; }
-  .anim-generic { animation:genericMove 2s ease-in-out infinite; transform-origin:center; }
+  .anim-bench-arms { animation:benchArms 3.5s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center; }
+  .anim-squat { animation:squatDown 3.5s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center top; }
+  .anim-deadlift { animation:deadliftPull 3.8s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center bottom; }
+  .anim-ohp { animation:ohpArms 3.2s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center; }
+  .anim-row { animation:rowPull 3s cubic-bezier(.4,0,.2,1) infinite; transform-origin:right center; }
+  .anim-pullup { animation:pullupBody 3.5s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center top; }
+  .anim-legpress { animation:legpressLegs 3s cubic-bezier(.4,0,.2,1) infinite; transform-origin:left center; }
+  .anim-lunge { animation:lungeDown 3.5s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center top; }
+  .anim-curl { animation:curlArm 3s cubic-bezier(.4,0,.2,1) infinite; transform-origin:100px 140px; }
+  .anim-lateral { animation:lateralRaise 3s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center; }
+  .anim-flyes { animation:flyesArms 3.2s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center; }
+  .anim-rdl { animation:rdlHinge 3.8s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center bottom; }
+  .anim-legcurl { animation:legcurlBend 3s cubic-bezier(.4,0,.2,1) infinite; transform-origin:120px 80px; }
+  .anim-calves { animation:calvesRaise 2.5s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center bottom; }
+  .anim-facepull { animation:facepullArms 3s cubic-bezier(.4,0,.2,1) infinite; transform-origin:right center; }
+  .anim-dip { animation:dipBody 3.5s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center top; }
+  .anim-hipthrust { animation:hipThrustUp 3s cubic-bezier(.4,0,.2,1) infinite; transform-origin:left center; }
+  .anim-abwheel { animation:abwheelRoll 3.5s cubic-bezier(.4,0,.2,1) infinite; transform-origin:left center; }
+  .anim-frontsquat { animation:frontSquatDown 3.5s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center top; }
+  .anim-bulgariansplitsquat { animation:bulgarianSplitDown 3.5s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center top; }
+  .anim-farmerwalk { animation:farmerStep 2.5s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center; }
+  .anim-generic { animation:genericMove 3s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center; }
 
   /* SYS tab notice */
   .sys-notice { border:1px solid rgba(255,182,49,.3);background:rgba(255,182,49,.05);padding:12px;margin:12px 0;font-size:.72rem;color:var(--pip-amber);letter-spacing:1px; }
@@ -681,14 +718,14 @@ const WEEK_A = {
 };
 
 // ─── MAIN COMPONENT ──────────────────────────────────────────
-export default function ClawCommandCenter() {
+export default function CommandCenter() {
   const [activeTab, setActiveTab] = useState("stat");
   const [booted, setBooted] = useState(false);
   const [bootText, setBootText] = useState("");
 
   // ─── Tasks (upgraded, localStorage-backed with auto-reset) ──
   const [tasks, setTasks] = useState(() => {
-    const raw = loadStorage("ccc_tasks", null);
+    const raw = loadStorage("cc_tasks", null);
     if (raw) return autoResetTasks(migrateTasks(raw));
     return DEFAULT_TASKS;
   });
@@ -699,9 +736,9 @@ export default function ClawCommandCenter() {
   const [newTaskDue, setNewTaskDue] = useState("");
 
   // ─── Health / Weight / Macros / Strength ────────────────────
-  const [weights, setWeights] = useState(() => loadStorage("ccc_weights", []));
-  const [strengthLog, setStrengthLog] = useState(() => loadStorage("ccc_strength", []));
-  const [macros, setMacros] = useState(() => loadStorage("ccc_macros", []));
+  const [weights, setWeights] = useState(() => loadStorage("cc_weights", []));
+  const [strengthLog, setStrengthLog] = useState(() => loadStorage("cc_strength", []));
+  const [macros, setMacros] = useState(() => loadStorage("cc_macros", []));
   const [weightInput, setWeightInput] = useState("");
   const [macroP, setMacroP] = useState("");
   const [macroC, setMacroC] = useState("");
@@ -712,28 +749,28 @@ export default function ClawCommandCenter() {
   const [strengthSets, setStrengthSets] = useState("");
 
   // ─── News ───────────────────────────────────────────────────
-  const [newsArticles, setNewsArticles] = useState(() => loadStorage("ccc_news", []));
+  const [newsArticles, setNewsArticles] = useState(() => loadStorage("cc_news", []));
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsError, setNewsError] = useState(null);
 
   // ─── TRT Injection Tracking ─────────────────────────────────
-  const [trtLastDate, setTrtLastDate] = useState(() => loadStorage("ccc_trt_last", "2026-02-22"));
+  const [trtLastDate, setTrtLastDate] = useState(() => loadStorage("cc_trt_last", "2026-02-22"));
 
   // ─── Oura ───────────────────────────────────────────────────
-  const [ouraData, setOuraData] = useState(() => loadStorage("ccc_oura", null));
+  const [ouraData, setOuraData] = useState(() => loadStorage("cc_oura", null));
   const [ouraLoading, setOuraLoading] = useState(false);
 
   // ─── Calendar ───────────────────────────────────────────────
   const [calMonth, setCalMonth] = useState(today.getMonth());
   const [calYear, setCalYear] = useState(today.getFullYear());
-  const [calEvents, setCalEvents] = useState(() => loadStorage("ccc_calendar", []));
+  const [calEvents, setCalEvents] = useState(() => loadStorage("cc_calendar", []));
   const [selectedDay, setSelectedDay] = useState(null);
   const [eventTitle, setEventTitle] = useState("");
   const [eventTime, setEventTime] = useState("");
   const [eventCat, setEventCat] = useState("work");
 
   // ─── Finance ────────────────────────────────────────────────
-  const [transactions, setTransactions] = useState(() => loadStorage("ccc_finances", []));
+  const [transactions, setTransactions] = useState(() => loadStorage("cc_finances", []));
   const [finType, setFinType] = useState("expense");
   const [finAmount, setFinAmount] = useState("");
   const [finCat, setFinCat] = useState("Other");
@@ -742,7 +779,7 @@ export default function ClawCommandCenter() {
   const [finYear, setFinYear] = useState(today.getFullYear());
 
   // ─── AI Chat ────────────────────────────────────────────────
-  const [chatMessages, setChatMessages] = useState(() => loadStorage("ccc_chat", []));
+  const [chatMessages, setChatMessages] = useState(() => loadStorage("cc_chat", []));
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef(null);
@@ -758,11 +795,11 @@ export default function ClawCommandCenter() {
   const [workoutStartTime, setWorkoutStartTime] = useState(null);
 
   // ─── Daily Reports ──────────────────────────────────────
-  const [dailyReports, setDailyReports] = useState(() => loadStorage("ccc_daily_reports", {}));
+  const [dailyReports, setDailyReports] = useState(() => loadStorage("cc_daily_reports", {}));
   const [reportModal, setReportModal] = useState(null);
   const [reportViewDate, setReportViewDate] = useState(null);
   const [reportSpeaking, setReportSpeaking] = useState(false);
-  const [dailyActivityLog, setDailyActivityLog] = useState(() => loadStorage("ccc_daily_activity", {}));
+  const [dailyActivityLog, setDailyActivityLog] = useState(() => loadStorage("cc_daily_activity", {}));
 
   const [glideDay] = useState(((today.getDay() || 7)) % 7 || 7);
   const [speaking, setSpeaking] = useState(false);
@@ -773,11 +810,11 @@ export default function ClawCommandCenter() {
 
   // ─── Meds / Vitamins ──────────────────────────────────────
   const [meds, setMeds] = useState(() => {
-    const stored = loadStorage("ccc_meds", null);
+    const stored = loadStorage("cc_meds", null);
     return stored && stored.length > 0 ? stored : DEFAULT_MEDS;
   });
   const [medsTakenToday, setMedsTakenToday] = useState(() => {
-    const stored = loadStorage("ccc_meds_taken", {});
+    const stored = loadStorage("cc_meds_taken", {});
     return stored[localDate] || {};
   });
   const [newMedName, setNewMedName] = useState("");
@@ -785,11 +822,11 @@ export default function ClawCommandCenter() {
   const [newMedFreq, setNewMedFreq] = useState("daily");
   const [newMedTime, setNewMedTime] = useState("morning");
   const [newMedCat, setNewMedCat] = useState("vitamin");
-  const [medAnalysis, setMedAnalysis] = useState(() => loadStorage("ccc_med_analysis", null));
+  const [medAnalysis, setMedAnalysis] = useState(() => loadStorage("cc_med_analysis", null));
   const [medAnalysisLoading, setMedAnalysisLoading] = useState(false);
 
   // ─── Wellness Check ───────────────────────────────────────
-  const [wellnessLog, setWellnessLog] = useState(() => loadStorage("ccc_wellness_log", {}));
+  const [wellnessLog, setWellnessLog] = useState(() => loadStorage("cc_wellness_log", {}));
   const [showWellnessModal, setShowWellnessModal] = useState(false);
   const [wellnessFeeling, setWellnessFeeling] = useState(3);
   const [wellnessSideEffects, setWellnessSideEffects] = useState("");
@@ -804,40 +841,40 @@ export default function ClawCommandCenter() {
 
   // ─── Water Tracking ───────────────────────────────────────
   const [waterOz, setWaterOz] = useState(() => {
-    const stored = loadStorage("ccc_water", {});
+    const stored = loadStorage("cc_water", {});
     return stored[localDate] || 0;
   });
   const [customWater, setCustomWater] = useState("");
 
   // ─── localStorage persistence ───────────────────────────────
-  useEffect(() => { localStorage.setItem("ccc_tasks", JSON.stringify(tasks)); }, [tasks]);
-  useEffect(() => { localStorage.setItem("ccc_weights", JSON.stringify(weights)); }, [weights]);
-  useEffect(() => { localStorage.setItem("ccc_strength", JSON.stringify(strengthLog)); }, [strengthLog]);
-  useEffect(() => { localStorage.setItem("ccc_macros", JSON.stringify(macros)); }, [macros]);
-  useEffect(() => { localStorage.setItem("ccc_calendar", JSON.stringify(calEvents)); }, [calEvents]);
-  useEffect(() => { localStorage.setItem("ccc_finances", JSON.stringify(transactions)); }, [transactions]);
-  useEffect(() => { localStorage.setItem("ccc_chat", JSON.stringify(chatMessages)); }, [chatMessages]);
-  useEffect(() => { localStorage.setItem("ccc_daily_reports", JSON.stringify(dailyReports)); }, [dailyReports]);
-  useEffect(() => { localStorage.setItem("ccc_daily_activity", JSON.stringify(dailyActivityLog)); }, [dailyActivityLog]);
-  useEffect(() => { localStorage.setItem("ccc_meds", JSON.stringify(meds)); }, [meds]);
-  useEffect(() => { localStorage.setItem("ccc_trt_last", JSON.stringify(trtLastDate)); }, [trtLastDate]);
+  useEffect(() => { localStorage.setItem("cc_tasks", JSON.stringify(tasks)); }, [tasks]);
+  useEffect(() => { localStorage.setItem("cc_weights", JSON.stringify(weights)); }, [weights]);
+  useEffect(() => { localStorage.setItem("cc_strength", JSON.stringify(strengthLog)); }, [strengthLog]);
+  useEffect(() => { localStorage.setItem("cc_macros", JSON.stringify(macros)); }, [macros]);
+  useEffect(() => { localStorage.setItem("cc_calendar", JSON.stringify(calEvents)); }, [calEvents]);
+  useEffect(() => { localStorage.setItem("cc_finances", JSON.stringify(transactions)); }, [transactions]);
+  useEffect(() => { localStorage.setItem("cc_chat", JSON.stringify(chatMessages)); }, [chatMessages]);
+  useEffect(() => { localStorage.setItem("cc_daily_reports", JSON.stringify(dailyReports)); }, [dailyReports]);
+  useEffect(() => { localStorage.setItem("cc_daily_activity", JSON.stringify(dailyActivityLog)); }, [dailyActivityLog]);
+  useEffect(() => { localStorage.setItem("cc_meds", JSON.stringify(meds)); }, [meds]);
+  useEffect(() => { localStorage.setItem("cc_trt_last", JSON.stringify(trtLastDate)); }, [trtLastDate]);
   useEffect(() => {
-    const stored = loadStorage("ccc_meds_taken", {});
+    const stored = loadStorage("cc_meds_taken", {});
     stored[localDate] = medsTakenToday;
-    localStorage.setItem("ccc_meds_taken", JSON.stringify(stored));
+    localStorage.setItem("cc_meds_taken", JSON.stringify(stored));
   }, [medsTakenToday]);
-  useEffect(() => { if (medAnalysis) localStorage.setItem("ccc_med_analysis", JSON.stringify(medAnalysis)); }, [medAnalysis]);
-  useEffect(() => { localStorage.setItem("ccc_wellness_log", JSON.stringify(wellnessLog)); }, [wellnessLog]);
+  useEffect(() => { if (medAnalysis) localStorage.setItem("cc_med_analysis", JSON.stringify(medAnalysis)); }, [medAnalysis]);
+  useEffect(() => { localStorage.setItem("cc_wellness_log", JSON.stringify(wellnessLog)); }, [wellnessLog]);
   useEffect(() => {
-    const stored = loadStorage("ccc_water", {});
+    const stored = loadStorage("cc_water", {});
     stored[localDate] = waterOz;
-    localStorage.setItem("ccc_water", JSON.stringify(stored));
+    localStorage.setItem("cc_water", JSON.stringify(stored));
   }, [waterOz]);
 
   // ─── Show wellness check once per day ─────────────────────
   useEffect(() => {
     if (!wellnessLog[localDate] && meds.length > 0) {
-      const lastCheck = loadStorage("ccc_wellness_last", null);
+      const lastCheck = loadStorage("cc_wellness_last", null);
       if (lastCheck !== localDate) {
         setTimeout(() => setShowWellnessModal(true), 3000);
       }
@@ -890,7 +927,7 @@ export default function ClawCommandCenter() {
       if (!res.ok) throw new Error(res.status === 426 || res.status === 403 ? "NewsAPI requires local dev or paid plan for browser requests" : `HTTP ${res.status}`);
       const data = await res.json();
       setNewsArticles(data.articles || []);
-      localStorage.setItem("ccc_news", JSON.stringify(data.articles || []));
+      localStorage.setItem("cc_news", JSON.stringify(data.articles || []));
     } catch (err) {
       setNewsError(err.message);
     } finally {
@@ -972,7 +1009,7 @@ export default function ClawCommandCenter() {
         fetchedAt: new Date().toISOString(),
       };
       setOuraData(result);
-      localStorage.setItem("ccc_oura", JSON.stringify(result));
+      localStorage.setItem("cc_oura", JSON.stringify(result));
     } catch (err) {
       console.error("Oura fetch failed:", err);
       setProxyAvailable(false);
@@ -997,7 +1034,7 @@ export default function ClawCommandCenter() {
       "    ║     ╚═══╝     ╚═╝               ║",
       "    ╚══════════════════════════════════╝",
       "",
-      "> INITIALIZING CLAW COMMAND CENTER v3.0...",
+      "> INITIALIZING COMMAND CENTER v3.0...",
       "> LOADING STATE FILES...",
       "> DETECTING ELIZABETH WEEK...",
       "> SCANNING TASK ENGINE...",
@@ -1008,7 +1045,7 @@ export default function ClawCommandCenter() {
       "> FETCHING NEWS FEED...",
       "> ALL SYSTEMS ONLINE.",
       "",
-      "CLAW COMMAND CENTER v3.0 — PIP-BOY EDITION — ONLINE",
+      "COMMAND CENTER v3.0 — PIP-BOY EDITION — ONLINE",
       `Ready for orders, ${USER.name}.`,
     ];
     let i = 0;
@@ -1116,7 +1153,7 @@ export default function ClawCommandCenter() {
     }
   };
 
-  const clearChat = () => { setChatMessages([]); localStorage.removeItem("ccc_chat"); };
+  const clearChat = () => { setChatMessages([]); localStorage.removeItem("cc_chat"); };
 
   // ─── Meds functions ───────────────────────────────────────
   const addMed = () => {
@@ -1146,7 +1183,7 @@ export default function ClawCommandCenter() {
       const res = await fetch(`${PROXY_URL}/ai/chat`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          system: "You are a supplement and medication advisor for the Claw Command Center. Analyze this supplement stack for a male doing heavy strength training 4x/week with a goal of weight gain and muscle building. Provide: 1) Any interactions or warnings between these supplements and the prescription medication 2) Optimal timing schedule (what to take when) 3) Recommendations to improve the stack based on his goals 4) Anything redundant. Be concise and direct.",
+          system: "You are a supplement and medication advisor for the Command Center. Analyze this supplement stack for a male doing heavy strength training 4x/week with a goal of weight gain and muscle building. Provide: 1) Any interactions or warnings between these supplements and the prescription medication 2) Optimal timing schedule (what to take when) 3) Recommendations to improve the stack based on his goals 4) Anything redundant. Be concise and direct.",
           messages: [{ role: "user", content: `Full supplement/medication stack:\n${medList}` }],
         }),
       });
@@ -1164,7 +1201,7 @@ export default function ClawCommandCenter() {
   const submitWellness = () => {
     const entry = { feeling: wellnessFeeling, sideEffects: wellnessSideEffects, energy: wellnessEnergy, sleepQuality: wellnessSleep, date: localDate, time: new Date().toISOString() };
     setWellnessLog((prev) => ({ ...prev, [localDate]: entry }));
-    localStorage.setItem("ccc_wellness_last", JSON.stringify(localDate));
+    localStorage.setItem("cc_wellness_last", JSON.stringify(localDate));
     setShowWellnessModal(false);
     setWellnessSideEffects("");
   };
@@ -1519,14 +1556,28 @@ export default function ClawCommandCenter() {
     if (!ex) return null;
     const parsed = parseSets(ex.sets);
     const animKey = getAnimationKey(ex.name);
-    const cues = FORM_CUES[animKey] || FORM_CUES.generic;
+    const cueData = FORM_CUES[animKey] || FORM_CUES.generic;
+    const cues = cueData.cues || [];
+    const muscles = cueData.muscles;
+    const mistakes = cueData.mistakes;
     const svgHtml = EXERCISE_SVGS[animKey] || EXERCISE_SVGS.generic;
+    const circumference = 2 * Math.PI * 85;
 
     return (
       <div className="workout-mode">
         {resting && restTimer > 0 && (
           <div className="rest-timer-overlay">
-            <div className="rest-timer-value">{Math.floor(restTimer / 60)}:{String(restTimer % 60).padStart(2, "0")}</div>
+            <div className="rest-timer-circle">
+              <svg viewBox="0 0 180 180">
+                <circle className="track" cx="90" cy="90" r="85" />
+                <circle className="progress" cx="90" cy="90" r="85"
+                  strokeDasharray={circumference}
+                  strokeDashoffset={circumference * (1 - restTimer / 90)} />
+              </svg>
+              <div className="timer-text">
+                <div className="rest-timer-value">{Math.floor(restTimer / 60)}:{String(restTimer % 60).padStart(2, "0")}</div>
+              </div>
+            </div>
             <div className="rest-timer-label">Rest Period</div>
             <button className="workout-btn" style={{ marginTop: 20 }} onClick={() => { setResting(false); setRestTimer(0); }}>SKIP REST</button>
           </div>
@@ -1545,6 +1596,21 @@ export default function ClawCommandCenter() {
         <div className="workout-cues">
           <div style={{ fontSize: ".6rem", letterSpacing: 2, color: "var(--pip-amber)", marginBottom: 6 }}>FORM CUES</div>
           {cues.map((cue, i) => <div key={i} className="workout-cue-item">{cue}</div>)}
+          {muscles && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: ".55rem", letterSpacing: 2, color: "var(--pip-green-dim)", marginBottom: 4 }}>MUSCLES</div>
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                {muscles.primary.map((m, i) => <span key={i} style={{ fontSize: ".6rem", padding: "2px 8px", border: "1px solid var(--pip-green)", color: "var(--pip-green)", letterSpacing: 1 }}>{m}</span>)}
+                {muscles.secondary.map((m, i) => <span key={`s${i}`} style={{ fontSize: ".6rem", padding: "2px 8px", border: "1px solid var(--pip-green-dim)", color: "var(--pip-green-dim)", letterSpacing: 1 }}>{m}</span>)}
+              </div>
+            </div>
+          )}
+          {mistakes && mistakes.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: ".55rem", letterSpacing: 2, color: "#ff4444", marginBottom: 4 }}>AVOID</div>
+              {mistakes.map((m, i) => <div key={i} style={{ fontSize: ".65rem", color: "rgba(255,68,68,.7)", padding: "2px 0", letterSpacing: 1 }}>! {m}</div>)}
+            </div>
+          )}
         </div>
 
         <div className="workout-weight-input">
@@ -2390,7 +2456,7 @@ export default function ClawCommandCenter() {
           <div>
             <div className="section-title">// AI Assistant</div>
             <div style={{ fontSize: ".65rem", color: "var(--pip-green-dark)", marginBottom: 8, letterSpacing: 1 }}>
-              POWERED BY CLAUDE \u2014 SPEAK FREELY, CLAW.
+              POWERED BY CLAUDE \u2014 SPEAK FREELY, COURIER 6.
             </div>
 
             <div className="chat-container">
@@ -2400,7 +2466,7 @@ export default function ClawCommandCenter() {
                 )}
                 {chatMessages.map((msg, i) => (
                   <div key={i} className={`chat-bubble ${msg.role}`}>
-                    <div className="role-tag">{msg.role === "user" ? "CLAW" : "COMMAND CENTER"}</div>
+                    <div className="role-tag">{msg.role === "user" ? "COURIER 6" : "COMMAND CENTER"}</div>
                     {msg.content}
                   </div>
                 ))}
@@ -2541,8 +2607,8 @@ export default function ClawCommandCenter() {
             <div className="pipboy-screen-inner">
               <div className="pip-container">
                 <div className="pip-header">
-                  <h1>{"\u2622"} CLAW COMMAND CENTER</h1>
-                  <div className="subtitle">Personal Operating System v3.0 — Pip-Boy Edition</div>
+                  <h1>{"\u2622"} COMMAND CENTER</h1>
+                  <div className="subtitle">RobCo Industries (TM) Personal Operating System</div>
                 </div>
 
                 <div className="pip-tabs">

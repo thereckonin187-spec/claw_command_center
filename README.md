@@ -1,4 +1,4 @@
-# CLAW COMMAND CENTER
+# COMMAND CENTER
 
 Personal Operating System — Pip-Boy Edition
 
@@ -20,7 +20,7 @@ A React-based personal dashboard that integrates health tracking, task managemen
 ## Project Structure
 
 ```
-claw_command_center/
+command_center/
 ├── src/                  # React frontend
 │   ├── App.jsx           # Main dashboard (all tabs)
 │   └── index.jsx         # Entry point

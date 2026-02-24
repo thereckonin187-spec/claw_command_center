@@ -1,6 +1,6 @@
 {
-  "name": "Claw Command Center",
-  "short_name": "CLAW",
+  "name": "Command Center",
+  "short_name": "CMD CTR",
   "description": "Personal Operating System",
   "start_url": "/",
   "display": "standalone",
