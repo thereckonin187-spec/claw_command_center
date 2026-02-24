@@ -795,17 +795,6 @@ export default function ClawCommandCenter() {
     localStorage.setItem("ccc_water", JSON.stringify(stored));
   }, [waterOz]);
 
-  // ─── Sync "Take Vitamins" task with meds completion ────────
-  useEffect(() => {
-    const vitIdx = tasks.findIndex((t) => t.name === "Take Vitamins");
-    if (vitIdx === -1) return;
-    if (allMedsTaken && !tasks[vitIdx].done) {
-      setTasks((prev) => prev.map((t, i) => i === vitIdx ? { ...t, done: true, completedAt: new Date().toISOString() } : t));
-    } else if (!allMedsTaken && tasks[vitIdx].done) {
-      setTasks((prev) => prev.map((t, i) => i === vitIdx ? { ...t, done: false, completedAt: null } : t));
-    }
-  }, [allMedsTaken]);
-
   // ─── Show wellness check once per day ─────────────────────
   useEffect(() => {
     if (!wellnessLog[localDate] && meds.length > 0) {
@@ -1380,6 +1369,17 @@ export default function ClawCommandCenter() {
   const medsTotal = dailyMeds.length;
   const allMedsTaken = medsTotal > 0 && medsTakenCount === medsTotal;
   const medsCompletedAt = allMedsTaken ? new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : null;
+
+  // ─── Sync "Take Vitamins" task with meds completion ────────
+  useEffect(() => {
+    const vitIdx = tasks.findIndex((t) => t.name === "Take Vitamins");
+    if (vitIdx === -1) return;
+    if (allMedsTaken && !tasks[vitIdx].done) {
+      setTasks((prev) => prev.map((t, i) => i === vitIdx ? { ...t, done: true, completedAt: new Date().toISOString() } : t));
+    } else if (!allMedsTaken && tasks[vitIdx].done) {
+      setTasks((prev) => prev.map((t, i) => i === vitIdx ? { ...t, done: false, completedAt: null } : t));
+    }
+  }, [allMedsTaken]);
 
   function scoreClass(score) { if (score == null) return ""; return score >= 70 ? "good" : score >= 50 ? "warn" : "low"; }
 
