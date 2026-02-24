@@ -7,7 +7,7 @@ Personal Operations Officer for Courier 6
 import json
 import os
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dt_time
 from pathlib import Path
 
 import httpx
@@ -19,11 +19,9 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
 
 # ─── CONFIG ──────────────────────────────────────────────────
-BOT_TOKEN = "1379c67aa70bee92d7cfa5bb5c26e3c7324e13ef5d6cd821077aa7fd236539ed"
+BOT_TOKEN = "8389969906:AAGh3_bLaHwz_tUeP7w5G8710oKBD_8McR0"
 ANTHROPIC_KEY = "sk-ant-api03-UXNfSHnAU_LbtJyz7FsEmcX4suPakQ712P-czJWS5Z0XiVB53MjZQlc0W7xKE8DlcuHWZHOoR_SA4viTVd6j6Q-EP7LWwA"
 STATE_FILE = Path(__file__).parent / "memory" / "shared_state.json"
 TZ = "America/Los_Angeles"
@@ -450,43 +448,43 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         log.error(f"Claude API error: {e}")
         await update.message.reply_text(f"⚠️ AI error: {e}")
 
-# ─── SCHEDULED REMINDERS ─────────────────────────────────────
-async def send_reminder(app, text):
+# ─── SCHEDULED REMINDERS (via JobQueue) ──────────────────────
+async def send_reminder(bot, text):
     state = load_state()
     chat_id = state.get("chat_id")
     if not chat_id:
         log.warning("No chat_id stored — cannot send reminder")
         return
     try:
-        await app.bot.send_message(chat_id=chat_id, text=text)
+        await bot.send_message(chat_id=chat_id, text=text)
     except Exception as e:
         log.error(f"Failed to send reminder: {e}")
 
-async def morning_briefing_job(app):
+async def morning_briefing_job(ctx: ContextTypes.DEFAULT_TYPE):
     text = await build_briefing()
-    await send_reminder(app, f"☀️ MORNING BRIEFING\n\n{text}")
+    await send_reminder(ctx.bot, f"☀️ MORNING BRIEFING\n\n{text}")
 
-async def evening_briefing_job(app):
+async def evening_briefing_job(ctx: ContextTypes.DEFAULT_TYPE):
     text = await build_briefing()
-    await send_reminder(app, f"🌙 EVENING BRIEFING\n\n{text}")
+    await send_reminder(ctx.bot, f"🌙 EVENING BRIEFING\n\n{text}")
 
-async def meds_reminder_job(app):
-    await send_reminder(app, "💊 Meds reminder — have you taken your vitamins, Courier 6?")
+async def meds_reminder_job(ctx: ContextTypes.DEFAULT_TYPE):
+    await send_reminder(ctx.bot, "💊 Meds reminder — have you taken your vitamins, Courier 6?")
 
-async def trt_check_job(app):
+async def trt_check_job(ctx: ContextTypes.DEFAULT_TYPE):
     state = load_state()
     days, next_date = trt_status(state)
     if days == 1:
-        await send_reminder(app, f"💉 TRT INJECTION DUE TOMORROW ({next_date})")
+        await send_reminder(ctx.bot, f"💉 TRT INJECTION DUE TOMORROW ({next_date})")
     elif days < 0:
-        await send_reminder(app, f"⚠️ TRT INJECTION OVERDUE by {abs(days)} day(s)!")
+        await send_reminder(ctx.bot, f"⚠️ TRT INJECTION OVERDUE by {abs(days)} day(s)!")
 
-async def elizabeth_check_job(app):
+async def elizabeth_check_job(ctx: ContextTypes.DEFAULT_TYPE):
     _, days = detect_elizabeth_week()
     if days == 2:
-        await send_reminder(app, "👧 Elizabeth Week starts in 2 days — prepare accordingly, Courier 6.")
+        await send_reminder(ctx.bot, "👧 Elizabeth Week starts in 2 days — prepare accordingly, Courier 6.")
 
-async def rain_check_job(app):
+async def rain_check_job(ctx: ContextTypes.DEFAULT_TYPE):
     weather = await fetch_weather()
     if not weather:
         return
@@ -496,7 +494,7 @@ async def rain_check_job(app):
         tomorrow_code = daily_codes[1]
         if 51 <= tomorrow_code <= 82:
             cond = WEATHER_CODES.get(tomorrow_code, "precipitation")
-            await send_reminder(app, f"🌧 Rain expected tomorrow: {cond}\nPlan accordingly, Courier 6.")
+            await send_reminder(ctx.bot, f"🌧 Rain expected tomorrow: {cond}\nPlan accordingly, Courier 6.")
 
 # ─── MAIN ────────────────────────────────────────────────────
 def main():
@@ -520,16 +518,15 @@ def main():
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Scheduled reminders
-    scheduler = AsyncIOScheduler(timezone=TZ)
-    scheduler.add_job(lambda: morning_briefing_job(app), CronTrigger(hour=7, minute=0, timezone=TZ))
-    scheduler.add_job(lambda: meds_reminder_job(app), CronTrigger(hour=8, minute=0, timezone=TZ))
-    scheduler.add_job(lambda: evening_briefing_job(app), CronTrigger(hour=21, minute=0, timezone=TZ))
-    scheduler.add_job(lambda: trt_check_job(app), CronTrigger(hour=7, minute=30, timezone=TZ))
-    scheduler.add_job(lambda: elizabeth_check_job(app), CronTrigger(hour=7, minute=15, timezone=TZ))
-    scheduler.add_job(lambda: rain_check_job(app), CronTrigger(hour=20, minute=0, timezone=TZ))
-    scheduler.start()
-    log.info("Scheduler started — reminders active")
+    # Scheduled reminders via built-in JobQueue (runs inside the bot's event loop)
+    jq = app.job_queue
+    jq.run_daily(morning_briefing_job, time=dt_time(hour=7, minute=0), name="morning_briefing")
+    jq.run_daily(meds_reminder_job, time=dt_time(hour=8, minute=0), name="meds_reminder")
+    jq.run_daily(evening_briefing_job, time=dt_time(hour=21, minute=0), name="evening_briefing")
+    jq.run_daily(trt_check_job, time=dt_time(hour=7, minute=30), name="trt_check")
+    jq.run_daily(elizabeth_check_job, time=dt_time(hour=7, minute=15), name="elizabeth_check")
+    jq.run_daily(rain_check_job, time=dt_time(hour=20, minute=0), name="rain_check")
+    log.info("JobQueue scheduled — reminders active")
 
     log.info("Bot polling started")
     app.run_polling(drop_pending_updates=True)

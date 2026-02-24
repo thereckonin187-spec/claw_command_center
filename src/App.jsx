@@ -1053,7 +1053,6 @@ export default function CommandCenter() {
   const [proxyAvailable, setProxyAvailable] = useState(IS_LOCAL);
 
   const fetchOura = useCallback(async () => {
-    if (!IS_LOCAL) { setOuraLoading(false); return; }
     setOuraLoading(true);
     try {
       // Always fetch a 5-day range to catch the most recent data
@@ -1062,25 +1061,36 @@ export default function CommandCenter() {
       startD.setDate(startD.getDate() - 5);
       const startDate = `${startD.getFullYear()}-${String(startD.getMonth() + 1).padStart(2, "0")}-${String(startD.getDate()).padStart(2, "0")}`;
 
-      let base = PROXY_URL;
-      const rangeParams = `?start_date=${startDate}&end_date=${endDate}`;
+      const rangeParams = `start_date=${startDate}&end_date=${endDate}`;
 
-      let sleepJson;
-      // Quick check if primary proxy is up
-      try {
-        const t = await fetch(`${base}/oura/sleep${rangeParams}`);
-        if (!t.ok) throw new Error();
-        sleepJson = await t.json();
-      } catch {
-        base = PROXY_FALLBACK;
-        sleepJson = await (await fetch(`${base}/oura/sleep${rangeParams}`)).json();
+      let sleepJson, readinessJson, activityJson, hrJson;
+
+      if (IS_LOCAL) {
+        // Local dev: use voice_server.py proxy
+        let base = PROXY_URL;
+        const qp = `?${rangeParams}`;
+        try {
+          const t = await fetch(`${base}/oura/sleep${qp}`);
+          if (!t.ok) throw new Error();
+          sleepJson = await t.json();
+        } catch {
+          base = PROXY_FALLBACK;
+          sleepJson = await (await fetch(`${base}/oura/sleep${qp}`)).json();
+        }
+        [readinessJson, activityJson, hrJson] = await Promise.all([
+          fetch(`${base}/oura/readiness${qp}`).then((r) => r.json()),
+          fetch(`${base}/oura/activity${qp}`).then((r) => r.json()).catch(() => ({ data: [] })),
+          fetch(`${base}/oura/heartrate?start_datetime=${startDate}T00:00:00&end_datetime=${endDate}T23:59:59`).then((r) => r.json()).catch(() => ({ data: [] })),
+        ]);
+      } else {
+        // Deployed: use Vercel serverless proxy
+        sleepJson = await fetch(`/api/oura?endpoint=sleep&${rangeParams}`).then((r) => r.json());
+        [readinessJson, activityJson, hrJson] = await Promise.all([
+          fetch(`/api/oura?endpoint=readiness&${rangeParams}`).then((r) => r.json()),
+          fetch(`/api/oura?endpoint=activity&${rangeParams}`).then((r) => r.json()).catch(() => ({ data: [] })),
+          fetch(`/api/oura?endpoint=heartrate&start_datetime=${startDate}T00:00:00&end_datetime=${endDate}T23:59:59`).then((r) => r.json()).catch(() => ({ data: [] })),
+        ]);
       }
-
-      const [readinessJson, activityJson, hrJson] = await Promise.all([
-        fetch(`${base}/oura/readiness${rangeParams}`).then((r) => r.json()),
-        fetch(`${base}/oura/activity${rangeParams}`).then((r) => r.json()).catch(() => ({ data: [] })),
-        fetch(`${base}/oura/heartrate?start_datetime=${startDate}T00:00:00&end_datetime=${endDate}T23:59:59`).then((r) => r.json()).catch(() => ({ data: [] })),
-      ]);
 
       // Use the MOST RECENT entry (last item) from each response
       const sleepData = sleepJson.data || [];
@@ -2209,7 +2219,7 @@ export default function CommandCenter() {
                   <button className="pip-btn" style={{ marginTop: 8 }} onClick={fetchOura} disabled={ouraLoading}>{ouraLoading ? "SYNCING..." : "REFRESH OURA"}</button>
                 </>
               ) : (
-                <div className="empty-state">{IS_LOCAL ? "NO OURA DATA \u2014 START PROXY SERVER TO SYNC" : "CONNECT LOCAL SERVER FOR OURA DATA"}</div>
+                <div className="empty-state">{IS_LOCAL ? "NO OURA DATA \u2014 START PROXY SERVER TO SYNC" : "NO OURA DATA \u2014 CHECK API CONNECTION"}</div>
               )}
             </div>
 
