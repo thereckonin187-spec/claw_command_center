@@ -895,7 +895,34 @@ export default function CommandCenter() {
   const [tabSwitching, setTabSwitching] = useState(false);
   const [flashingTaskIdx, setFlashingTaskIdx] = useState(null);
   const [navInput, setNavInput] = useState("");
+
+  // ─── Elizabeth's App (FAM integration) ─────────────────────
+  const [ekNoteInput, setEkNoteInput] = useState("");
+  const [ekTaskInput, setEkTaskInput] = useState("");
+  const ekTasks = loadStorage("elizabeth_tasks", []);
+  const ekStars = loadStorage("elizabeth_rewards", 0);
   const screenRef = useRef(null);
+
+  // ─── Push Notifications ─────────────────────────────────────
+  const [notifSettings, setNotifSettings] = useState(() => loadStorage("cc_notif_settings", {
+    enabled: false, meds: true, trt: true, tasks: true, weather: true, elizabeth: true, weeklyReport: true
+  }));
+  const [notifPermission, setNotifPermission] = useState(typeof Notification !== "undefined" ? Notification.permission : "denied");
+
+  // ─── Weekly Reports ─────────────────────────────────────────
+  const [weeklyReports, setWeeklyReports] = useState(() => loadStorage("cc_weekly_reports", {}));
+  const [weeklyReportModal, setWeeklyReportModal] = useState(null); // null | "view" | "history"
+  const [weeklyReportViewKey, setWeeklyReportViewKey] = useState(null);
+  const [weeklyReportSpeaking, setWeeklyReportSpeaking] = useState(false);
+
+  // ─── PR Tracking ────────────────────────────────────────────
+  const [prs, setPrs] = useState(() => loadStorage("cc_prs", {}));
+  const [prCelebration, setPrCelebration] = useState(null);
+
+  // ─── Weight Goal ────────────────────────────────────────────
+  const [weightGoal, setWeightGoal] = useState(() => loadStorage("cc_weight_goal", { target: null, date: null }));
+  const [weightGoalInput, setWeightGoalInput] = useState("");
+  const [weightGoalDateInput, setWeightGoalDateInput] = useState("");
 
   // ─── Meds / Vitamins ──────────────────────────────────────
   const [meds, setMeds] = useState(() => {
@@ -959,6 +986,10 @@ export default function CommandCenter() {
     stored[localDate] = waterOz;
     localStorage.setItem("cc_water", JSON.stringify(stored));
   }, [waterOz]);
+  useEffect(() => { localStorage.setItem("cc_notif_settings", JSON.stringify(notifSettings)); }, [notifSettings]);
+  useEffect(() => { localStorage.setItem("cc_weekly_reports", JSON.stringify(weeklyReports)); }, [weeklyReports]);
+  useEffect(() => { localStorage.setItem("cc_prs", JSON.stringify(prs)); }, [prs]);
+  useEffect(() => { localStorage.setItem("cc_weight_goal", JSON.stringify(weightGoal)); }, [weightGoal]);
 
   // ─── Show wellness check once per day ─────────────────────
   useEffect(() => {
@@ -1220,7 +1251,19 @@ export default function CommandCenter() {
   // ─── Weight / Macros / Strength ─────────────────────────────
   const logWeight = () => { const w = parseFloat(weightInput); if (!w) return; setWeights((prev) => [...prev, { date: new Date().toLocaleDateString(), weight: w }]); setWeightInput(""); };
   const logMacros = () => { const p = parseFloat(macroP), c = parseFloat(macroC), f = parseFloat(macroF); if (isNaN(p) || isNaN(c) || isNaN(f)) return; setMacros((prev) => [...prev, { date: new Date().toLocaleDateString(), protein: p, carbs: c, fat: f }]); setMacroP(""); setMacroC(""); setMacroF(""); };
-  const logStrength = () => { if (!strengthExercise.trim()) return; setStrengthLog((prev) => [...prev, { date: new Date().toLocaleDateString(), exercise: strengthExercise.trim(), weight: strengthWeight || "BW", reps: strengthReps || "-", sets: strengthSets || "-" }]); setStrengthExercise(""); setStrengthWeight(""); setStrengthReps(""); setStrengthSets(""); };
+  const logStrength = () => {
+    if (!strengthExercise.trim()) return;
+    const entry = { date: new Date().toLocaleDateString(), exercise: strengthExercise.trim(), weight: strengthWeight || "BW", reps: strengthReps || "-", sets: strengthSets || "-" };
+    setStrengthLog((prev) => [...prev, entry]);
+    // Check for PR
+    const newPR = checkAndUpdatePR(entry.exercise, entry.weight, entry.reps);
+    if (newPR) {
+      setPrCelebration({ exercise: entry.exercise, weight: newPR.weight, reps: newPR.reps, previous: newPR.previous });
+      setTimeout(() => setPrCelebration(null), 5000);
+      try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const osc = ctx.createOscillator(); osc.type = "sine"; osc.frequency.value = 523; osc.connect(ctx.destination); osc.start(); setTimeout(() => { osc.frequency.value = 659; }, 150); setTimeout(() => { osc.frequency.value = 784; }, 300); setTimeout(() => { osc.stop(); ctx.close(); }, 500); } catch {}
+    }
+    setStrengthExercise(""); setStrengthWeight(""); setStrengthReps(""); setStrengthSets("");
+  };
 
   // ─── Calendar actions ───────────────────────────────────────
   const addCalEvent = () => {
@@ -1384,6 +1427,279 @@ export default function CommandCenter() {
   const addWater = (oz) => setWaterOz((prev) => prev + oz);
   const addCustomWater = () => { const oz = parseInt(customWater); if (oz > 0) { addWater(oz); setCustomWater(""); } };
 
+  // ─── Push Notification System ────────────────────────────────
+  const requestNotifPermission = useCallback(async () => {
+    if (typeof Notification === "undefined") return;
+    const perm = await Notification.requestPermission();
+    setNotifPermission(perm);
+    if (perm === "granted") {
+      setNotifSettings(prev => ({ ...prev, enabled: true }));
+    }
+  }, []);
+
+  const sendNotification = useCallback((title, body, tag) => {
+    if (notifPermission !== "granted" || !notifSettings.enabled) return;
+    const lastSent = loadStorage("cc_notif_last", {});
+    const key = `${tag}_${localDate}`;
+    if (lastSent[key]) return; // already sent today
+    lastSent[key] = Date.now();
+    localStorage.setItem("cc_notif_last", JSON.stringify(lastSent));
+    try {
+      new Notification(title, { body, icon: "/icon-192.jpg", tag, requireInteraction: false });
+    } catch { /* ignore */ }
+  }, [notifPermission, notifSettings.enabled, localDate]);
+
+  // Notification scheduler — checks every 60 seconds
+  useEffect(() => {
+    if (!notifSettings.enabled || notifPermission !== "granted") return;
+    const check = () => {
+      const now = new Date();
+      const h = now.getHours();
+      const m = now.getMinutes();
+
+      // Meds reminders
+      if (notifSettings.meds) {
+        if (h === 7 && m < 2) {
+          sendNotification("Morning Meds", "Morning meds reminder, Courier 6. Time to take your vitamins.", "meds_morning");
+        }
+        if (h === 10 && m < 2 && !allMedsTaken) {
+          sendNotification("Meds Check", "You haven't logged your meds yet today.", "meds_check");
+        }
+        if (isTrainingDay && h === 6 && m >= 30 && m < 32) {
+          sendNotification("Pre-Workout", "Don't forget N.O. XT 30 min before training.", "preworkout");
+        }
+      }
+
+      // TRT reminders
+      if (notifSettings.trt) {
+        if (h === 8 && m < 2) {
+          if (trtDaysUntil === 2) sendNotification("TRT Reminder", "TRT injection due in 2 days.", "trt");
+          else if (trtDaysUntil === 1) sendNotification("TRT Reminder", "TRT injection due TOMORROW.", "trt");
+          else if (trtDaysUntil === 0) sendNotification("TRT DUE", "TRT INJECTION DUE TODAY.", "trt");
+          else if (trtDaysUntil < 0) sendNotification("TRT OVERDUE", `TRT INJECTION OVERDUE — ${Math.abs(trtDaysUntil)} days past due.`, "trt");
+        }
+      }
+
+      // Task reminders
+      if (notifSettings.tasks) {
+        if (h === 8 && m < 2) {
+          sendNotification("Morning Tasks", `You have ${tasks.length} tasks today, Courier 6.`, "tasks_morning");
+        }
+        if (h === 20 && m < 2) {
+          const done = tasks.filter(t => t.done).length;
+          const left = tasks.length - done;
+          sendNotification("Evening Check", `Evening check — ${left} tasks remaining. ${done} completed today.`, "tasks_evening");
+        }
+      }
+
+      // Elizabeth Week
+      if (notifSettings.elizabeth) {
+        if (h === 9 && m < 2) {
+          if (ewDaysUntil === 2) sendNotification("Elizabeth Week", "Elizabeth Week starts in 2 days — adjust schedule.", "ew");
+          else if (ewDaysUntil === 1 || (ewDaysUntil === 0 && !elizabethWeek)) sendNotification("Elizabeth Week", "Elizabeth Week begins today at 6PM.", "ew");
+        }
+      }
+
+      // Weather alerts
+      if (notifSettings.weather && h === 6 && m < 2) {
+        const wxCode = weatherData?.olympia?.daily?.weather_code?.[0];
+        if (wxCode != null && wxCode >= 51) {
+          sendNotification("Weather Alert", `Weather alert: ${getWeatherCondition(wxCode)} expected today in Olympia.`, "wx_alert");
+        }
+      }
+
+      // Weekly report auto-generate Sunday 9 PM
+      if (notifSettings.weeklyReport && now.getDay() === 0 && h === 21 && m < 2) {
+        const weekKey = getWeekStart(localDate);
+        if (!weeklyReports[weekKey]) {
+          const report = generateWeeklyReportData();
+          setWeeklyReports(prev => ({ ...prev, [weekKey]: report }));
+          sendNotification("Weekly Report", "Weekly report ready, Courier 6.", "weekly_report");
+        }
+      }
+    };
+    check(); // run immediately
+    const id = setInterval(check, 60000);
+    return () => clearInterval(id);
+  }, [notifSettings, notifPermission, allMedsTaken, isTrainingDay, trtDaysUntil, tasks, ewDaysUntil, elizabethWeek, weatherData, localDate, sendNotification, weeklyReports]);
+
+  // Request permission on first load
+  useEffect(() => {
+    if (typeof Notification !== "undefined" && Notification.permission === "default") {
+      // Delay to not annoy on first visit
+      const t = setTimeout(() => requestNotifPermission(), 5000);
+      return () => clearTimeout(t);
+    }
+  }, [requestNotifPermission]);
+
+  const testNotification = useCallback(() => {
+    if (notifPermission !== "granted") {
+      requestNotifPermission();
+      return;
+    }
+    try {
+      new Notification("Command Center Test", { body: "Notifications operational, Courier 6.", icon: "/icon-192.jpg" });
+    } catch { alert("Notifications blocked by browser."); }
+  }, [notifPermission, requestNotifPermission]);
+
+  // ─── PR Tracking System ─────────────────────────────────────
+  const checkAndUpdatePR = useCallback((exercise, weight, reps) => {
+    const w = parseFloat(weight);
+    if (isNaN(w) || w <= 0 || exercise === "BW") return null;
+    const r = parseInt(reps) || 0;
+    const existing = prs[exercise];
+    if (!existing || w > existing.weight || (w === existing.weight && r > existing.reps)) {
+      const newPR = { weight: w, reps: r, date: localDate, previous: existing || null };
+      setPrs(prev => ({ ...prev, [exercise]: newPR }));
+      return newPR;
+    }
+    return null;
+  }, [prs, localDate]);
+
+  // ─── Weekly Report Generation ───────────────────────────────
+  const generateWeeklyReportData = useCallback(() => {
+    const weekStart = new Date(today);
+    weekStart.setDate(weekStart.getDate() - 6);
+    const weekDates = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(weekStart);
+      d.setDate(d.getDate() + i);
+      weekDates.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+    }
+    const weekDateLabels = weekDates.map(d => new Date(d + "T12:00:00").toLocaleDateString());
+
+    // Training
+    const weekStrength = strengthLog.filter(s => weekDateLabels.includes(s.date));
+    const trainingDays = [...new Set(weekStrength.map(s => s.date))].length;
+    let totalVolume = 0;
+    const exercisesPerformed = {};
+    weekStrength.forEach(s => {
+      const w = parseFloat(s.weight) || 0;
+      const r = parseInt(s.reps) || 0;
+      const sets = parseInt(s.sets) || 1;
+      totalVolume += w * r * sets;
+      if (!exercisesPerformed[s.exercise]) exercisesPerformed[s.exercise] = [];
+      exercisesPerformed[s.exercise].push({ weight: w, reps: r, sets, date: s.date });
+    });
+
+    // PR check for the week
+    const weekPRs = [];
+    Object.entries(exercisesPerformed).forEach(([name, entries]) => {
+      const maxEntry = entries.reduce((best, e) => e.weight > best.weight ? e : best, entries[0]);
+      if (prs[name] && prs[name].date && weekDates.some(d => {
+        const dl = new Date(d + "T12:00:00").toLocaleDateString();
+        return dl === prs[name].date;
+      })) {
+        weekPRs.push({ exercise: name, weight: maxEntry.weight, reps: maxEntry.reps });
+      }
+    });
+
+    // Body composition
+    const weekWeights = weights.filter(w => weekDateLabels.includes(w.date));
+    const firstWeight = weekWeights.length > 0 ? weekWeights[0].weight : null;
+    const lastWeight = weekWeights.length > 0 ? weekWeights[weekWeights.length - 1].weight : null;
+    const weightChange = firstWeight && lastWeight ? +(lastWeight - firstWeight).toFixed(1) : null;
+
+    // Macros
+    const weekMacros = macros.filter(m => weekDateLabels.includes(m.date));
+    const avgMacros = weekMacros.length > 0 ? {
+      protein: Math.round(weekMacros.reduce((s, m) => s + m.protein, 0) / weekMacros.length),
+      carbs: Math.round(weekMacros.reduce((s, m) => s + m.carbs, 0) / weekMacros.length),
+      fat: Math.round(weekMacros.reduce((s, m) => s + m.fat, 0) / weekMacros.length),
+    } : null;
+    const avgCalories = avgMacros ? avgMacros.protein * 4 + avgMacros.carbs * 4 + avgMacros.fat * 9 : null;
+
+    // Oura (use cached if available)
+    const sleepScore = ouraData?.sleepScore ?? null;
+    const readinessScore = ouraData?.readinessScore ?? null;
+    const stepsPerDay = ouraData?.steps ?? null;
+
+    // Task execution
+    const taskCompletionRate = totalTasks > 0 ? Math.round((completedCount / totalTasks) * 100) : 0;
+
+    // Meds compliance
+    const medsTakenAll = loadStorage("cc_meds_taken", {});
+    let medsDaysComplete = 0;
+    weekDates.forEach(d => {
+      const dayMeds = medsTakenAll[d];
+      if (dayMeds) {
+        const count = Object.values(dayMeds).filter(Boolean).length;
+        if (count >= dailyMeds.length) medsDaysComplete++;
+      }
+    });
+    const medsCompliance = Math.round((medsDaysComplete / 7) * 100);
+
+    // Wellness trends
+    const weekWellness = weekDates.map(d => wellnessLog[d]).filter(Boolean);
+    const avgFeeling = weekWellness.length > 0 ? +(weekWellness.reduce((s, w) => s + w.feeling, 0) / weekWellness.length).toFixed(1) : null;
+    const avgEnergy = weekWellness.length > 0 ? +(weekWellness.reduce((s, w) => s + w.energy, 0) / weekWellness.length).toFixed(1) : null;
+
+    // Grades
+    const grades = {};
+    grades.training = trainingDays >= 4 ? "A" : trainingDays >= 3 ? "B" : trainingDays >= 2 ? "C" : "D";
+    grades.body = weekWeights.length >= 3 ? "A" : weekWeights.length >= 1 ? "B" : "D";
+    grades.health = (sleepScore && sleepScore >= 70) ? (readinessScore >= 70 ? "A" : "B") : sleepScore ? "C" : "D";
+    grades.tasks = taskCompletionRate >= 80 ? "A" : taskCompletionRate >= 60 ? "B" : taskCompletionRate >= 40 ? "C" : "D";
+    grades.meds = medsCompliance >= 85 ? "A" : medsCompliance >= 60 ? "B" : medsCompliance >= 40 ? "C" : "D";
+    const gradeValues = { A: 4, B: 3, C: 2, D: 1 };
+    const overallGPA = Object.values(grades).reduce((s, g) => s + gradeValues[g], 0) / Object.keys(grades).length;
+    const overallGrade = overallGPA >= 3.5 ? "A" : overallGPA >= 2.5 ? "B" : overallGPA >= 1.5 ? "C" : "D";
+
+    return {
+      generatedAt: new Date().toISOString(),
+      weekDates,
+      training: { days: trainingDays, totalVolume, exercises: Object.keys(exercisesPerformed).length, prs: weekPRs },
+      body: { firstWeight, lastWeight, weightChange, weekWeights, avgMacros, avgCalories },
+      health: { sleepScore, readinessScore, stepsPerDay },
+      tasks: { completionRate: taskCompletionRate },
+      meds: { compliance: medsCompliance, daysComplete: medsDaysComplete },
+      wellness: { avgFeeling, avgEnergy },
+      grades,
+      overallGrade,
+    };
+  }, [strengthLog, weights, macros, ouraData, totalTasks, completedCount, dailyMeds, wellnessLog, prs, today, localDate]);
+
+  const generateWeeklyReport = useCallback(() => {
+    const report = generateWeeklyReportData();
+    const weekKey = getWeekStart(localDate);
+    setWeeklyReports(prev => ({ ...prev, [weekKey]: report }));
+    setWeeklyReportViewKey(weekKey);
+    setWeeklyReportModal("view");
+  }, [generateWeeklyReportData, localDate]);
+
+  const speakWeeklyReport = useCallback(async (report) => {
+    if (!report) return;
+    const lines = [
+      "Weekly performance report.",
+      `Training: ${report.training.days} days, ${report.training.exercises} exercises, ${Math.round(report.training.totalVolume).toLocaleString()} pounds total volume.`,
+      report.training.prs.length > 0 ? `New PRs this week: ${report.training.prs.map(p => `${p.exercise} at ${p.weight} pounds`).join(", ")}.` : "",
+      report.body.weightChange != null ? `Weight change: ${report.body.weightChange > 0 ? "+" : ""}${report.body.weightChange} pounds.` : "",
+      report.body.avgCalories ? `Average daily calories: ${report.body.avgCalories}.` : "",
+      report.health.sleepScore ? `Average sleep score: ${report.health.sleepScore}.` : "",
+      `Task completion: ${report.tasks.completionRate}%.`,
+      `Meds compliance: ${report.meds.compliance}%.`,
+      `Overall grade: ${report.overallGrade}.`,
+    ].filter(Boolean).join(" ");
+    setWeeklyReportSpeaking(true);
+    try {
+      const res = await fetch(PROXY_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: lines }) });
+      if (!res.ok) throw new Error();
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => { setWeeklyReportSpeaking(false); URL.revokeObjectURL(url); };
+      audio.onerror = () => { setWeeklyReportSpeaking(false); URL.revokeObjectURL(url); };
+      audio.play();
+    } catch {
+      const synth = window.speechSynthesis;
+      const utter = new SpeechSynthesisUtterance(lines);
+      utter.rate = 0.95;
+      utter.onend = () => setWeeklyReportSpeaking(false);
+      utter.onerror = () => setWeeklyReportSpeaking(false);
+      synth.speak(utter);
+    }
+  }, []);
+
   // ─── Navigation command ────────────────────────────────────
   const navigateTo = (destination) => {
     if (!destination || !destination.trim()) return;
@@ -1497,6 +1813,14 @@ export default function CommandCenter() {
       date: new Date().toLocaleDateString(), exercise, weight: data.weight, reps: data.reps, sets: String(data.sets),
     }));
     setStrengthLog((prev) => [...prev, ...newEntries]);
+    // Check PRs from workout
+    newEntries.forEach(entry => {
+      const newPR = checkAndUpdatePR(entry.exercise, entry.weight, entry.reps);
+      if (newPR) {
+        setPrCelebration({ exercise: entry.exercise, weight: newPR.weight, reps: newPR.reps, previous: newPR.previous });
+        setTimeout(() => setPrCelebration(null), 5000);
+      }
+    });
     // Log workout completion
     const elapsed = workoutStartTime ? Math.round((Date.now() - workoutStartTime) / 60000) : 0;
     setDailyActivityLog((prev) => {
@@ -1896,6 +2220,139 @@ export default function CommandCenter() {
     );
   };
 
+  // ─── WEEKLY REPORT MODAL ──────────────────────────────────
+  const renderWeeklyReportModal = () => {
+    if (!weeklyReportModal) return null;
+    const gradeColor = (g) => g === "A" ? "var(--pip-green)" : g === "B" ? "#18d6ff" : g === "C" ? "var(--pip-amber)" : "#ff4444";
+
+    if (weeklyReportModal === "history") {
+      const keys = Object.keys(weeklyReports).sort().reverse();
+      return (
+        <div className="report-modal-overlay" onClick={() => setWeeklyReportModal(null)}>
+          <div className="report-modal" onClick={e => e.stopPropagation()}>
+            <div className="report-modal-header">
+              <div className="report-modal-title">Weekly Report History</div>
+              <button className="pip-btn small" onClick={() => setWeeklyReportModal(null)}>CLOSE</button>
+            </div>
+            {keys.length === 0 ? <div className="empty-state">NO WEEKLY REPORTS YET</div> : keys.map(k => (
+              <div key={k} className="report-history-item" onClick={() => { setWeeklyReportViewKey(k); setWeeklyReportModal("view"); }}>
+                <span>Week of {k}</span>
+                <span style={{ color: gradeColor(weeklyReports[k].overallGrade) }}>{weeklyReports[k].overallGrade}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    const report = weeklyReports[weeklyReportViewKey];
+    if (!report) return null;
+
+    const trendArrow = (val) => val > 0 ? "\u25B2" : val < 0 ? "\u25BC" : "\u25C6";
+    const trendColor = (val, inverse) => {
+      if (val === 0 || val == null) return "var(--pip-green-dim)";
+      return (inverse ? val < 0 : val > 0) ? "var(--pip-green)" : "#ff4444";
+    };
+
+    return (
+      <div className="report-modal-overlay" onClick={() => setWeeklyReportModal(null)}>
+        <div className="report-modal" onClick={e => e.stopPropagation()}>
+          <div className="report-modal-header">
+            <div className="report-modal-title">Weekly Report — {weeklyReportViewKey}</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button className="pip-btn small" onClick={() => setWeeklyReportModal("history")}>HISTORY</button>
+              <button className="pip-btn small" onClick={() => setWeeklyReportModal(null)}>CLOSE</button>
+            </div>
+          </div>
+
+          {/* Overall Grade */}
+          <div style={{ textAlign: "center", padding: 20, border: `2px solid ${gradeColor(report.overallGrade)}`, marginBottom: 16 }}>
+            <div style={{ fontSize: ".65rem", letterSpacing: 3, color: "var(--pip-green-dim)" }}>OVERALL GRADE</div>
+            <div style={{ fontSize: "3rem", color: gradeColor(report.overallGrade), textShadow: `0 0 20px ${gradeColor(report.overallGrade)}88` }}>{report.overallGrade}</div>
+          </div>
+
+          {/* Category Grades */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+            {[["TRAINING", report.grades.training], ["BODY", report.grades.body], ["HEALTH", report.grades.health], ["TASKS", report.grades.tasks], ["MEDS", report.grades.meds]].map(([label, grade]) => (
+              <div key={label} style={{ flex: 1, minWidth: 60, textAlign: "center", padding: 8, border: `1px solid ${gradeColor(grade)}44` }}>
+                <div style={{ fontSize: ".5rem", letterSpacing: 2, color: "var(--pip-green-dim)" }}>{label}</div>
+                <div style={{ fontSize: "1.4rem", color: gradeColor(grade) }}>{grade}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Training */}
+          <div className="report-section">
+            <h4>Training</h4>
+            <div className="report-line"><strong>Days:</strong> {report.training.days}/4</div>
+            <div className="report-line"><strong>Exercises:</strong> {report.training.exercises}</div>
+            <div className="report-line"><strong>Total Volume:</strong> {Math.round(report.training.totalVolume).toLocaleString()} lbs</div>
+            {report.training.prs.length > 0 && report.training.prs.map((pr, i) => (
+              <div key={i} className="report-line" style={{ color: "var(--pip-amber)" }}><strong>NEW PR:</strong> {pr.exercise} — {pr.weight}lbs x {pr.reps} {"\uD83C\uDFC6"}</div>
+            ))}
+          </div>
+
+          {/* Body Composition */}
+          <div className="report-section">
+            <h4>Body Composition</h4>
+            {report.body.firstWeight && report.body.lastWeight && (
+              <>
+                <div className="report-line"><strong>Start:</strong> {report.body.firstWeight} lbs → <strong>End:</strong> {report.body.lastWeight} lbs</div>
+                <div className="report-line" style={{ color: trendColor(report.body.weightChange) }}>
+                  {trendArrow(report.body.weightChange)} {report.body.weightChange > 0 ? "+" : ""}{report.body.weightChange} lbs
+                </div>
+              </>
+            )}
+            {report.body.avgMacros && (
+              <div className="report-line"><strong>Avg Macros:</strong> P:{report.body.avgMacros.protein}g C:{report.body.avgMacros.carbs}g F:{report.body.avgMacros.fat}g</div>
+            )}
+            {report.body.avgCalories && <div className="report-line"><strong>Avg Calories:</strong> {report.body.avgCalories} kcal/day</div>}
+            {/* Mini bar chart */}
+            {report.body.weekWeights.length > 0 && (
+              <div style={{ display: "flex", gap: 3, alignItems: "flex-end", height: 50, marginTop: 8 }}>
+                {report.body.weekWeights.map((w, i) => {
+                  const min = Math.min(...report.body.weekWeights.map(ww => ww.weight));
+                  const max = Math.max(...report.body.weekWeights.map(ww => ww.weight));
+                  const range = max - min || 1;
+                  const pct = ((w.weight - min) / range) * 80 + 20;
+                  return <div key={i} style={{ flex: 1, height: `${pct}%`, background: "var(--pip-green)", minHeight: 4, opacity: 0.7 }} title={`${w.weight} lbs`} />;
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Health */}
+          <div className="report-section">
+            <h4>Health</h4>
+            <div className="report-line"><strong>Sleep Score:</strong> {report.health.sleepScore ?? "N/A"}</div>
+            <div className="report-line"><strong>Readiness:</strong> {report.health.readinessScore ?? "N/A"}</div>
+            <div className="report-line"><strong>Steps/Day:</strong> {report.health.stepsPerDay?.toLocaleString() ?? "N/A"}</div>
+          </div>
+
+          {/* Tasks & Meds */}
+          <div className="report-section">
+            <h4>Execution</h4>
+            <div className="report-line"><strong>Task Completion:</strong> {report.tasks.completionRate}%</div>
+            <div className="report-line"><strong>Meds Compliance:</strong> {report.meds.compliance}% ({report.meds.daysComplete}/7 days)</div>
+          </div>
+
+          {/* Wellness */}
+          {report.wellness.avgFeeling && (
+            <div className="report-section">
+              <h4>Wellness</h4>
+              <div className="report-line"><strong>Avg Feeling:</strong> {report.wellness.avgFeeling}/5</div>
+              <div className="report-line"><strong>Avg Energy:</strong> {report.wellness.avgEnergy}/5</div>
+            </div>
+          )}
+
+          <button className="pip-btn" style={{ width: "100%", marginTop: 12, padding: "10px 16px" }} onClick={() => speakWeeklyReport(report)} disabled={weeklyReportSpeaking}>
+            {weeklyReportSpeaking ? "SPEAKING..." : "SPEAK REPORT"}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   // ─── TAB CONTENT ──────────────────────────────────────────
   const renderTab = () => {
     switch (activeTab) {
@@ -2047,6 +2504,24 @@ export default function CommandCenter() {
             <button className="pip-btn" style={{ width: "100%", marginTop: 8, padding: "12px 16px" }} onClick={handleNavPrompt}>
               NAVIGATE
             </button>
+
+            {/* Weekly Report Section */}
+            <div style={{ marginTop: 20, borderTop: "1px solid var(--pip-border)", paddingTop: 16 }}>
+              <div className="section-title">// Weekly Performance Report</div>
+              <button className="pip-btn" style={{ width: "100%", padding: "12px 16px", background: "rgba(24,214,255,.1)", borderColor: "#18d6ff" }} onClick={generateWeeklyReport}>
+                GENERATE WEEKLY REPORT
+              </button>
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                {weeklyReports[getWeekStart(localDate)] && (
+                  <button className="pip-btn" style={{ flex: 1, padding: "10px 16px" }} onClick={() => { setWeeklyReportViewKey(getWeekStart(localDate)); setWeeklyReportModal("view"); }}>
+                    VIEW THIS WEEK
+                  </button>
+                )}
+                <button className="pip-btn" style={{ flex: 1, padding: "10px 16px" }} onClick={() => setWeeklyReportModal("history")}>
+                  WEEKLY HISTORY
+                </button>
+              </div>
+            </div>
           </div>
         );
 
@@ -2167,6 +2642,27 @@ export default function CommandCenter() {
                 <button className="pip-btn" onClick={logStrength}>LOG</button>
               </div>
             </div>
+
+            {/* PR Board */}
+            {Object.keys(prs).length > 0 && (
+              <div style={{ marginTop: 20 }}>
+                <div className="section-title">// PR Board {"\uD83C\uDFC6"}</div>
+                {Object.entries(prs).sort((a, b) => (b[1].date || "").localeCompare(a[1].date || "")).map(([exercise, pr]) => {
+                  const isThisWeek = (() => {
+                    if (!pr.date) return false;
+                    const prD = new Date(pr.date + "T12:00:00");
+                    const diff = (today - prD) / (1000 * 60 * 60 * 24);
+                    return diff < 7;
+                  })();
+                  return (
+                    <div key={exercise} className="stat-row" style={{ borderLeft: isThisWeek ? "3px solid var(--pip-green)" : "3px solid transparent", paddingLeft: 8 }}>
+                      <span className="stat-label">{exercise} {isThisWeek ? "\uD83C\uDD95" : ""}</span>
+                      <span className="stat-value" style={{ color: isThisWeek ? "var(--pip-green)" : undefined }}>{pr.weight}lbs x {pr.reps} <span style={{ fontSize: ".55rem", color: "var(--pip-green-dim)" }}>{pr.date}</span></span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             <div style={{ marginTop: 20 }}>
               <div className="section-title">// Weight Log</div>
@@ -2291,6 +2787,163 @@ export default function CommandCenter() {
                 <button className="pip-btn" onClick={addCustomWater}>ADD</button>
                 <button className="pip-btn small" onClick={() => setWaterOz(0)} style={{ fontSize: ".55rem" }}>RESET</button>
               </div>
+            </div>
+
+            {/* Body Composition Dashboard */}
+            <div className="briefing-block">
+              <h3>Body Composition</h3>
+              {(() => {
+                const w30 = weights.slice(-30);
+                const w7 = weights.slice(-7);
+                const currentW = weights.length > 0 ? weights[weights.length - 1].weight : null;
+                const w7ago = weights.length >= 7 ? weights[weights.length - 7].weight : (weights.length > 0 ? weights[0].weight : null);
+                const w30ago = weights.length >= 30 ? weights[weights.length - 30].weight : (weights.length > 0 ? weights[0].weight : null);
+                const change7 = currentW && w7ago ? +(currentW - w7ago).toFixed(1) : null;
+                const change30 = currentW && w30ago ? +(currentW - w30ago).toFixed(1) : null;
+                const weeklyAvgChange = change7 != null ? change7 : null;
+                const deficitSurplus = weeklyAvgChange != null ? Math.round(weeklyAvgChange * 3500) : null;
+
+                return (
+                  <>
+                    {/* Body stats */}
+                    <div className="oura-score-row" style={{ marginBottom: 12 }}>
+                      <div className="oura-score-card"><div className="score-label">Current</div><div className="score-value" style={{ fontSize: "1.2rem" }}>{currentW ? `${currentW} lbs` : "\u2014"}</div></div>
+                      <div className="oura-score-card"><div className="score-label">7d Ago</div><div className="score-value" style={{ fontSize: "1.2rem" }}>{w7ago ? `${w7ago} lbs` : "\u2014"}</div></div>
+                      <div className="oura-score-card"><div className="score-label">30d Ago</div><div className="score-value" style={{ fontSize: "1.2rem" }}>{w30ago ? `${w30ago} lbs` : "\u2014"}</div></div>
+                    </div>
+                    <div className="oura-score-row">
+                      <div className="oura-score-card"><div className="score-label">7d Change</div><div className="score-value" style={{ fontSize: "1.2rem", color: change7 > 0 ? "var(--pip-green)" : change7 < 0 ? "#18d6ff" : undefined }}>{change7 != null ? `${change7 > 0 ? "+" : ""}${change7}` : "\u2014"}</div></div>
+                      <div className="oura-score-card"><div className="score-label">30d Change</div><div className="score-value" style={{ fontSize: "1.2rem", color: change30 > 0 ? "var(--pip-green)" : change30 < 0 ? "#18d6ff" : undefined }}>{change30 != null ? `${change30 > 0 ? "+" : ""}${change30}` : "\u2014"}</div></div>
+                      <div className="oura-score-card"><div className="score-label">Est Cal/wk</div><div className="score-value" style={{ fontSize: "1.2rem", color: deficitSurplus > 0 ? "var(--pip-green)" : deficitSurplus < 0 ? "var(--pip-amber)" : undefined }}>{deficitSurplus != null ? `${deficitSurplus > 0 ? "+" : ""}${deficitSurplus}` : "\u2014"}</div></div>
+                    </div>
+
+                    {/* Weight goal progress */}
+                    {weightGoal.target && currentW && (
+                      <div style={{ marginTop: 12 }}>
+                        <div style={{ fontSize: ".6rem", letterSpacing: 2, color: "var(--pip-green-dim)", marginBottom: 4 }}>GOAL: {weightGoal.target} lbs {weightGoal.date ? `by ${weightGoal.date}` : ""}</div>
+                        <div className="health-bar-container">
+                          <div className="health-bar-label">
+                            <span>PROGRESS</span>
+                            <span>{Math.abs(currentW - weightGoal.target).toFixed(1)} lbs to go</span>
+                          </div>
+                          <div className="health-bar-track">
+                            <div className="health-bar-fill" style={{
+                              width: `${Math.min(100, w30ago ? Math.abs(currentW - w30ago) / Math.abs(weightGoal.target - w30ago) * 100 : 50)}%`,
+                              background: Math.abs(currentW - weightGoal.target) < 2 ? "var(--pip-green)" : "var(--pip-amber)"
+                            }} />
+                          </div>
+                        </div>
+                        {weightGoal.date && (() => {
+                          const daysLeft = Math.max(1, Math.round((new Date(weightGoal.date + "T12:00:00") - today) / (1000 * 60 * 60 * 24)));
+                          const weeksLeft = (daysLeft / 7).toFixed(1);
+                          const remaining = weightGoal.target - currentW;
+                          const weeklyNeeded = (remaining / weeksLeft).toFixed(1);
+                          return <div style={{ fontSize: ".6rem", color: "var(--pip-green-dim)", marginTop: 4 }}>Need {weeklyNeeded > 0 ? "+" : ""}{weeklyNeeded} lbs/week over {weeksLeft} weeks</div>;
+                        })()}
+                      </div>
+                    )}
+
+                    {/* SVG Weight trend chart (last 30 days) */}
+                    {w30.length >= 2 && (
+                      <div style={{ marginTop: 12 }}>
+                        <div style={{ fontSize: ".6rem", letterSpacing: 2, color: "var(--pip-green-dim)", marginBottom: 4 }}>WEIGHT TREND — LAST {w30.length} ENTRIES</div>
+                        <svg viewBox="0 0 300 80" style={{ width: "100%", height: 80, background: "rgba(5,20,10,.3)", border: "1px solid var(--pip-border)" }}>
+                          {(() => {
+                            const vals = w30.map(w => w.weight);
+                            const min = Math.min(...vals) - 1;
+                            const max = Math.max(...vals) + 1;
+                            const range = max - min || 1;
+                            const points = vals.map((v, i) => `${(i / (vals.length - 1)) * 290 + 5},${75 - ((v - min) / range) * 65}`);
+                            // Moving average
+                            const ma = vals.map((_, i) => {
+                              const slice = vals.slice(Math.max(0, i - 2), i + 1);
+                              return slice.reduce((a, b) => a + b, 0) / slice.length;
+                            });
+                            const maPoints = ma.map((v, i) => `${(i / (vals.length - 1)) * 290 + 5},${75 - ((v - min) / range) * 65}`);
+                            // Goal line
+                            const goalY = weightGoal.target ? 75 - ((weightGoal.target - min) / range) * 65 : null;
+                            return (
+                              <>
+                                {goalY != null && goalY >= 5 && goalY <= 75 && (
+                                  <line x1="5" y1={goalY} x2="295" y2={goalY} stroke="#ff69b4" strokeWidth="0.5" strokeDasharray="4,3" />
+                                )}
+                                <polyline points={points.join(" ")} fill="none" stroke="#18ff6d" strokeWidth="1.5" opacity="0.7" />
+                                <polyline points={maPoints.join(" ")} fill="none" stroke="#18d6ff" strokeWidth="1" opacity="0.5" />
+                                {vals.map((v, i) => (
+                                  <circle key={i} cx={(i / (vals.length - 1)) * 290 + 5} cy={75 - ((v - min) / range) * 65} r="2" fill="#18ff6d" />
+                                ))}
+                              </>
+                            );
+                          })()}
+                        </svg>
+                        <div style={{ display: "flex", gap: 12, marginTop: 4, fontSize: ".5rem", color: "var(--pip-green-dim)" }}>
+                          <span><span style={{ color: "#18ff6d" }}>{"\u2500\u2500"}</span> Weight</span>
+                          <span><span style={{ color: "#18d6ff" }}>{"\u2500\u2500"}</span> Trend</span>
+                          {weightGoal.target && <span><span style={{ color: "#ff69b4" }}>{"\u2500 \u2500"}</span> Goal</span>}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Macro trends (last 7 days) */}
+                    {macros.length > 0 && (
+                      <div style={{ marginTop: 12 }}>
+                        <div style={{ fontSize: ".6rem", letterSpacing: 2, color: "var(--pip-green-dim)", marginBottom: 4 }}>MACRO AVERAGES — LAST {Math.min(7, macros.length)} ENTRIES</div>
+                        {(() => {
+                          const recent = macros.slice(-7);
+                          const avgP = Math.round(recent.reduce((s, m) => s + m.protein, 0) / recent.length);
+                          const avgC = Math.round(recent.reduce((s, m) => s + m.carbs, 0) / recent.length);
+                          const avgF = Math.round(recent.reduce((s, m) => s + m.fat, 0) / recent.length);
+                          const avgCal = avgP * 4 + avgC * 4 + avgF * 9;
+                          const total = avgP + avgC + avgF || 1;
+                          return (
+                            <div>
+                              <div style={{ display: "flex", height: 16, borderRadius: 3, overflow: "hidden", marginBottom: 6 }}>
+                                <div style={{ width: `${(avgP / total) * 100}%`, background: "#18ff6d" }} title={`Protein: ${avgP}g`} />
+                                <div style={{ width: `${(avgC / total) * 100}%`, background: "#18d6ff" }} title={`Carbs: ${avgC}g`} />
+                                <div style={{ width: `${(avgF / total) * 100}%`, background: "var(--pip-amber)" }} title={`Fat: ${avgF}g`} />
+                              </div>
+                              <div style={{ display: "flex", gap: 12, fontSize: ".55rem" }}>
+                                <span style={{ color: "#18ff6d" }}>P: {avgP}g</span>
+                                <span style={{ color: "#18d6ff" }}>C: {avgC}g</span>
+                                <span style={{ color: "var(--pip-amber)" }}>F: {avgF}g</span>
+                                <span style={{ color: "var(--pip-green-dim)" }}>~{avgCal} kcal/day</span>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {/* Correlation insights */}
+                    {(() => {
+                      const insights = [];
+                      if (change7 != null && macros.length >= 3) {
+                        const recentMacros = macros.slice(-7);
+                        const avgProtein = Math.round(recentMacros.reduce((s, m) => s + m.protein, 0) / recentMacros.length);
+                        const avgCal = Math.round(recentMacros.reduce((s, m) => s + (m.protein * 4 + m.carbs * 4 + m.fat * 9), 0) / recentMacros.length);
+                        if (change7 > 0 && avgProtein > 120) insights.push({ text: "Weight up + protein up = muscle gain likely", color: "var(--pip-green)" });
+                        if (change7 < 0 && avgCal < 2200) insights.push({ text: "Weight down + calories down = deficit working", color: "#18d6ff" });
+                        if (change7 > 1.5 && avgCal > 3000) insights.push({ text: "Rapid weight gain — check calorie surplus", color: "var(--pip-amber)" });
+                      }
+                      if (ouraData?.sleepScore && ouraData.sleepScore < 60 && ouraData?.readinessScore && ouraData.readinessScore < 60) {
+                        insights.push({ text: "Sleep score down + readiness down = recovery needed", color: "#ff4444" });
+                      }
+                      if (ouraData?.sleepScore && ouraData.sleepScore >= 80 && ouraData?.readinessScore && ouraData.readinessScore >= 80) {
+                        insights.push({ text: "Excellent recovery — push hard today", color: "var(--pip-green)" });
+                      }
+                      if (insights.length === 0) return null;
+                      return (
+                        <div style={{ marginTop: 12 }}>
+                          <div style={{ fontSize: ".6rem", letterSpacing: 2, color: "var(--pip-green-dim)", marginBottom: 4 }}>INSIGHTS</div>
+                          {insights.map((ins, i) => (
+                            <div key={i} style={{ fontSize: ".65rem", color: ins.color, padding: "4px 0", letterSpacing: 1 }}>{"\u25C6"} {ins.text}</div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </>
+                );
+              })()}
             </div>
           </div>
         );
@@ -2605,6 +3258,87 @@ export default function CommandCenter() {
                 {birthdays.map((b, i) => <div key={i} className="briefing-line" style={{ color: "var(--pip-amber)" }}>{b}</div>)}
               </div>
             )}
+
+            {/* ─── Elizabeth's App Section ─── */}
+            <div style={{ marginTop: 24, borderTop: "1px solid var(--pip-green-dark)", paddingTop: 16 }}>
+              <div className="section-title">// Elizabeth's Magic Kingdom</div>
+              <div className="family-card" style={{ marginTop: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <div className="family-name">APP STATUS</div>
+                  <span style={{ color: "var(--pip-amber)", fontSize: ".8rem" }}>{"\u2605"} {ekStars} stars</span>
+                </div>
+                <div className="family-detail">
+                  Tasks: {ekTasks.filter(t => t.done).length}/{ekTasks.length} completed today
+                </div>
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: ".7rem", letterSpacing: 2, color: "var(--pip-green-dim)", marginBottom: 6 }}>ADD NOTE TO ELIZABETH</div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input className="pip-input" style={{ flex: 1 }} placeholder="Write a note..."
+                      value={ekNoteInput} onChange={e => setEkNoteInput(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === "Enter" && ekNoteInput.trim()) {
+                          const notes = loadStorage("elizabeth_notes", []);
+                          notes.unshift({ text: ekNoteInput.trim(), date: localDate, hearted: false });
+                          localStorage.setItem("elizabeth_notes", JSON.stringify(notes));
+                          setEkNoteInput("");
+                        }
+                      }} />
+                    <button className="pip-btn small" onClick={() => {
+                      if (!ekNoteInput.trim()) return;
+                      const notes = loadStorage("elizabeth_notes", []);
+                      notes.unshift({ text: ekNoteInput.trim(), date: localDate, hearted: false });
+                      localStorage.setItem("elizabeth_notes", JSON.stringify(notes));
+                      setEkNoteInput("");
+                    }}>SEND</button>
+                  </div>
+                </div>
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: ".7rem", letterSpacing: 2, color: "var(--pip-green-dim)", marginBottom: 6 }}>ADD TASK FOR ELIZABETH</div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input className="pip-input" style={{ flex: 1 }} placeholder="New task..."
+                      value={ekTaskInput} onChange={e => setEkTaskInput(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === "Enter" && ekTaskInput.trim()) {
+                          const tasks = loadStorage("elizabeth_tasks", []);
+                          tasks.push({ name: ekTaskInput.trim(), emoji: "\uD83D\uDCCB", done: false, earnedStar: false });
+                          localStorage.setItem("elizabeth_tasks", JSON.stringify(tasks));
+                          const custom = loadStorage("elizabeth_custom_tasks", [
+                            { name: "Read 20 min", emoji: "\uD83D\uDCDA" },
+                            { name: "Clean room", emoji: "\uD83E\uDDF9" },
+                            { name: "Brush teeth AM", emoji: "\uD83E\uDDB7" },
+                            { name: "Brush teeth PM", emoji: "\uD83E\uDDB7" },
+                            { name: "Be kind", emoji: "\uD83D\uDC95" },
+                          ]);
+                          custom.push({ name: ekTaskInput.trim(), emoji: "\uD83D\uDCCB" });
+                          localStorage.setItem("elizabeth_custom_tasks", JSON.stringify(custom));
+                          setEkTaskInput("");
+                        }
+                      }} />
+                    <button className="pip-btn small" onClick={() => {
+                      if (!ekTaskInput.trim()) return;
+                      const tasks = loadStorage("elizabeth_tasks", []);
+                      tasks.push({ name: ekTaskInput.trim(), emoji: "\uD83D\uDCCB", done: false, earnedStar: false });
+                      localStorage.setItem("elizabeth_tasks", JSON.stringify(tasks));
+                      const custom = loadStorage("elizabeth_custom_tasks", [
+                        { name: "Read 20 min", emoji: "\uD83D\uDCDA" },
+                        { name: "Clean room", emoji: "\uD83E\uDDF9" },
+                        { name: "Brush teeth AM", emoji: "\uD83E\uDDB7" },
+                        { name: "Brush teeth PM", emoji: "\uD83E\uDDB7" },
+                        { name: "Be kind", emoji: "\uD83D\uDC95" },
+                      ]);
+                      custom.push({ name: ekTaskInput.trim(), emoji: "\uD83D\uDCCB" });
+                      localStorage.setItem("elizabeth_custom_tasks", JSON.stringify(custom));
+                      setEkTaskInput("");
+                    }}>ADD</button>
+                  </div>
+                </div>
+                <div style={{ marginTop: 16 }}>
+                  <a href="/elizabeth" style={{ display: "inline-block", padding: "8px 16px", background: "var(--pip-green)", color: "#000", borderRadius: 4, textDecoration: "none", fontFamily: "monospace", fontSize: ".8rem", letterSpacing: 1 }}>
+                    OPEN ELIZABETH'S MAGIC KINGDOM {"\u2192"}
+                  </a>
+                </div>
+              </div>
+            </div>
           </div>
         );
 
@@ -2818,6 +3552,71 @@ export default function CommandCenter() {
               <div className="stat-row"><span className="stat-label">Water Today</span><span className="stat-value">{waterOz}oz / {WATER_TARGET}oz</span></div>
               <div className="stat-row"><span className="stat-label">Daily Reports</span><span className="stat-value">{Object.keys(dailyReports).length}</span></div>
             </div>
+            {/* Notification Settings */}
+            <div className="briefing-block">
+              <h3>Notifications</h3>
+              <div className="stat-row">
+                <span className="stat-label">Permission</span>
+                <span className="stat-value" style={{ color: notifPermission === "granted" ? "var(--pip-green)" : "var(--pip-amber)" }}>
+                  {notifPermission === "granted" ? "GRANTED" : notifPermission === "denied" ? "DENIED" : "NOT REQUESTED"}
+                </span>
+              </div>
+              {notifPermission !== "granted" && (
+                <button className="pip-btn" style={{ width: "100%", marginTop: 8, padding: "10px 16px" }} onClick={requestNotifPermission}>
+                  REQUEST PERMISSION
+                </button>
+              )}
+              {notifPermission === "granted" && (
+                <>
+                  <div style={{ marginTop: 8 }}>
+                    {[
+                      ["enabled", "Master Toggle"],
+                      ["meds", "Meds Reminders"],
+                      ["trt", "TRT Reminders"],
+                      ["tasks", "Task Reminders"],
+                      ["weather", "Weather Alerts"],
+                      ["elizabeth", "Elizabeth Week"],
+                      ["weeklyReport", "Weekly Report"],
+                    ].map(([key, label]) => (
+                      <div key={key} className="stat-row" style={{ cursor: "pointer" }} onClick={() => setNotifSettings(prev => ({ ...prev, [key]: !prev[key] }))}>
+                        <span className="stat-label">{label}</span>
+                        <span className="stat-value" style={{ color: notifSettings[key] ? "var(--pip-green)" : "#ff4444" }}>
+                          {notifSettings[key] ? "ON" : "OFF"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <button className="pip-btn" style={{ width: "100%", marginTop: 8, padding: "10px 16px" }} onClick={testNotification}>
+                    TEST NOTIFICATION
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Weight Goal */}
+            <div className="briefing-block">
+              <h3>Weight Goal</h3>
+              {weightGoal.target ? (
+                <>
+                  <div className="stat-row"><span className="stat-label">Target</span><span className="stat-value">{weightGoal.target} lbs</span></div>
+                  {weightGoal.date && <div className="stat-row"><span className="stat-label">By</span><span className="stat-value">{weightGoal.date}</span></div>}
+                  <button className="pip-btn small" style={{ marginTop: 8 }} onClick={() => setWeightGoal({ target: null, date: null })}>CLEAR GOAL</button>
+                </>
+              ) : (
+                <div className="input-row">
+                  <input type="number" className="pip-input" placeholder="Target lbs" value={weightGoalInput} onChange={e => setWeightGoalInput(e.target.value)} style={{ maxWidth: 120 }} />
+                  <input type="date" className="pip-input" value={weightGoalDateInput} onChange={e => setWeightGoalDateInput(e.target.value)} style={{ maxWidth: 160 }} />
+                  <button className="pip-btn" onClick={() => {
+                    const t = parseFloat(weightGoalInput);
+                    if (!t) return;
+                    setWeightGoal({ target: t, date: weightGoalDateInput || null });
+                    setWeightGoalInput("");
+                    setWeightGoalDateInput("");
+                  }}>SET</button>
+                </div>
+              )}
+            </div>
+
             <button className="pip-btn" style={{ width: "100%", marginTop: 8, padding: "12px 16px" }} onClick={() => { if (window.confirm("Clear ALL localStorage data? This cannot be undone.")) { localStorage.clear(); window.location.reload(); } }}>
               FACTORY RESET
             </button>
@@ -2835,6 +3634,22 @@ export default function CommandCenter() {
       <style>{globalCSS}</style>
       <div className="crt-overlay" />
       {renderReportModal()}
+      {renderWeeklyReportModal()}
+
+      {/* PR Celebration */}
+      {prCelebration && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.7)", animation: "fadeIn .3s ease" }} onClick={() => setPrCelebration(null)}>
+          <div style={{ textAlign: "center", padding: 32, border: "2px solid var(--pip-amber)", background: "rgba(10,15,10,.95)", maxWidth: 340 }}>
+            <div style={{ fontSize: "2.5rem", marginBottom: 8 }}>{"\uD83C\uDFC6"}</div>
+            <div style={{ fontSize: "1.4rem", color: "var(--pip-amber)", textShadow: "0 0 20px rgba(255,182,49,.5)", letterSpacing: 3, marginBottom: 8 }}>NEW PR!</div>
+            <div style={{ fontSize: "1.1rem", color: "var(--pip-green)", marginBottom: 4 }}>{prCelebration.exercise}</div>
+            <div style={{ fontSize: "1.8rem", color: "var(--pip-amber)", fontWeight: "bold" }}>{prCelebration.weight}lbs x {prCelebration.reps}</div>
+            {prCelebration.previous && (
+              <div style={{ fontSize: ".7rem", color: "var(--pip-green-dim)", marginTop: 8 }}>Previous: {prCelebration.previous.weight}lbs x {prCelebration.previous.reps}</div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Wellness Check Modal */}
       {showWellnessModal && (

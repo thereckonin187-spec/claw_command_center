@@ -1,0 +1,833 @@
+/* ═══════════════════════════════════════════════════════════════
+   ELIZABETH'S MAGIC KINGDOM — Stylesheet
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  --ek-pink: #FFB6C1;
+  --ek-lavender: #E6E6FA;
+  --ek-mint: #98FB98;
+  --ek-yellow: #FFFACD;
+  --ek-coral: #FFB07C;
+  --ek-sky: #87CEEB;
+  --ek-white: #FFFFFF;
+  --ek-bg: #FFF5F9;
+  --ek-text: #4A3F5C;
+  --ek-text-light: #7A6F8C;
+  --ek-shadow: 0 4px 16px rgba(180, 130, 180, 0.2);
+  --ek-radius: 20px;
+}
+
+/* ─── Base ──────────────────────────────────────────────────── */
+.elizabeth-app {
+  font-family: 'Fredoka One', cursive;
+  background: var(--ek-bg);
+  min-height: 100vh;
+  color: var(--ek-text);
+  position: relative;
+  overflow-x: hidden;
+  padding-bottom: 100px;
+}
+
+/* ─── Floating background decorations ──────────────────────── */
+.ek-bg-floaters {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.ek-floater {
+  position: absolute;
+  font-size: 2rem;
+  opacity: 0.15;
+  animation: ekFloat linear infinite;
+}
+
+@keyframes ekFloat {
+  0% { transform: translateY(100vh) rotate(0deg); }
+  100% { transform: translateY(-100px) rotate(360deg); }
+}
+
+/* ─── Header ───────────────────────────────────────────────── */
+.ek-header {
+  background: linear-gradient(135deg, var(--ek-pink), var(--ek-lavender), var(--ek-sky), var(--ek-mint));
+  background-size: 300% 300%;
+  animation: ekRainbow 8s ease infinite;
+  padding: 24px 20px 16px;
+  text-align: center;
+  position: relative;
+  z-index: 1;
+  user-select: none;
+  -webkit-user-select: none;
+  border-bottom: 4px solid rgba(255, 255, 255, 0.5);
+}
+
+@keyframes ekRainbow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.ek-header h1 {
+  font-size: 1.6rem;
+  color: white;
+  text-shadow: 2px 2px 4px rgba(150, 100, 150, 0.4);
+  margin: 0;
+  letter-spacing: 1px;
+}
+
+.ek-header-subtitle {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.85);
+  margin-top: 4px;
+  font-family: 'Fredoka One', cursive;
+}
+
+/* ─── Animated cat ─────────────────────────────────────────── */
+.ek-cat {
+  position: fixed;
+  bottom: 80px;
+  right: 10px;
+  font-size: 2.5rem;
+  z-index: 5;
+  animation: ekCatIdle 3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes ekCatIdle {
+  0%, 100% { transform: translateY(0) scale(1); }
+  25% { transform: translateY(-4px) scale(1.02); }
+  50% { transform: translateY(0) scale(1); }
+  75% { transform: translateY(-2px) scale(1.05) rotate(3deg); }
+}
+
+/* ─── Tab navigation ───────────────────────────────────────── */
+.ek-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 12px 12px 8px;
+  overflow-x: auto;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--ek-bg);
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.ek-tabs::-webkit-scrollbar { display: none; }
+
+.ek-tab-btn {
+  flex-shrink: 0;
+  font-family: 'Fredoka One', cursive;
+  font-size: 0.85rem;
+  padding: 10px 16px;
+  border-radius: 50px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.ek-tab-btn.home { background: var(--ek-pink); color: white; }
+.ek-tab-btn.tasks { background: var(--ek-lavender); color: var(--ek-text); }
+.ek-tab-btn.calendar { background: var(--ek-sky); color: white; }
+.ek-tab-btn.notes { background: var(--ek-coral); color: white; }
+.ek-tab-btn.rewards { background: var(--ek-yellow); color: var(--ek-text); }
+
+.ek-tab-btn.active {
+  transform: scale(1.08);
+  border-color: white;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.ek-tab-btn:not(.active) {
+  opacity: 0.6;
+  transform: scale(0.95);
+}
+
+/* ─── Content area ─────────────────────────────────────────── */
+.ek-content {
+  padding: 16px;
+  position: relative;
+  z-index: 1;
+}
+
+/* ─── Cards ────────────────────────────────────────────────── */
+.ek-card {
+  background: white;
+  border-radius: var(--ek-radius);
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: var(--ek-shadow);
+  position: relative;
+  overflow: hidden;
+}
+
+.ek-card-title {
+  font-size: 1.1rem;
+  margin-bottom: 12px;
+  color: var(--ek-text);
+}
+
+/* ─── Home tab ─────────────────────────────────────────────── */
+.ek-greeting {
+  font-size: 1.8rem;
+  text-align: center;
+  padding: 20px 10px;
+  color: var(--ek-text);
+}
+
+.ek-status-card {
+  background: linear-gradient(135deg, var(--ek-pink), var(--ek-lavender));
+  border-radius: var(--ek-radius);
+  padding: 20px;
+  color: white;
+  text-align: center;
+  margin-bottom: 16px;
+  box-shadow: var(--ek-shadow);
+}
+
+.ek-status-card.active {
+  background: linear-gradient(135deg, var(--ek-pink), #ff89b5);
+}
+
+.ek-status-card.inactive {
+  background: linear-gradient(135deg, var(--ek-lavender), var(--ek-sky));
+}
+
+.ek-status-card h3 {
+  font-size: 1.2rem;
+  margin: 0 0 8px;
+}
+
+.ek-status-card p {
+  font-size: 0.95rem;
+  margin: 4px 0;
+  opacity: 0.9;
+}
+
+.ek-weather-card {
+  background: linear-gradient(135deg, var(--ek-sky), var(--ek-mint));
+  border-radius: var(--ek-radius);
+  padding: 20px;
+  color: white;
+  text-align: center;
+  margin-bottom: 16px;
+  box-shadow: var(--ek-shadow);
+}
+
+.ek-weather-card .ek-weather-icon {
+  font-size: 3rem;
+  margin-bottom: 8px;
+}
+
+.ek-weather-card .ek-weather-temp {
+  font-size: 2rem;
+}
+
+.ek-weather-card .ek-weather-desc {
+  font-size: 0.95rem;
+  opacity: 0.9;
+  margin-top: 4px;
+}
+
+.ek-funfact {
+  background: white;
+  border-radius: var(--ek-radius);
+  padding: 20px;
+  text-align: center;
+  box-shadow: var(--ek-shadow);
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--ek-text);
+}
+
+.ek-funfact-label {
+  font-size: 0.8rem;
+  color: var(--ek-text-light);
+  margin-bottom: 8px;
+  letter-spacing: 1px;
+}
+
+/* ─── Tasks tab ────────────────────────────────────────────── */
+.ek-task-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: white;
+  border-radius: 16px;
+  margin-bottom: 10px;
+  box-shadow: 0 2px 8px rgba(180, 130, 180, 0.12);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  min-height: 48px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.ek-task-item:active {
+  transform: scale(0.97);
+}
+
+.ek-task-item.done {
+  background: linear-gradient(135deg, #f0fff0, #e8ffe8);
+  opacity: 0.7;
+}
+
+.ek-task-checkbox {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 3px solid var(--ek-lavender);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 1.1rem;
+  transition: all 0.3s ease;
+}
+
+.ek-task-item.done .ek-task-checkbox {
+  background: var(--ek-mint);
+  border-color: var(--ek-mint);
+}
+
+.ek-task-name {
+  flex: 1;
+  font-size: 1rem;
+  font-family: 'Fredoka One', cursive;
+}
+
+.ek-task-item.done .ek-task-name {
+  text-decoration: line-through;
+  color: var(--ek-text-light);
+}
+
+.ek-task-emoji {
+  font-size: 1.4rem;
+}
+
+.ek-task-star {
+  font-size: 1.2rem;
+  opacity: 0.3;
+  transition: all 0.3s ease;
+}
+
+.ek-task-item.done .ek-task-star {
+  opacity: 1;
+  animation: ekStarPop 0.5s ease;
+}
+
+@keyframes ekStarPop {
+  0% { transform: scale(0); }
+  50% { transform: scale(1.5); }
+  100% { transform: scale(1); }
+}
+
+.ek-tasks-progress {
+  text-align: center;
+  padding: 16px;
+  font-size: 1rem;
+  color: var(--ek-text-light);
+}
+
+.ek-progress-bar {
+  height: 12px;
+  background: var(--ek-lavender);
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 8px 0;
+}
+
+.ek-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--ek-pink), var(--ek-mint));
+  border-radius: 6px;
+  transition: width 0.5s ease;
+}
+
+/* ─── Calendar tab ─────────────────────────────────────────── */
+.ek-cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.ek-cal-nav {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: var(--ek-lavender);
+  color: var(--ek-text);
+  font-size: 1.2rem;
+  cursor: pointer;
+  font-family: 'Fredoka One', cursive;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ek-cal-title {
+  font-size: 1.1rem;
+  color: var(--ek-text);
+}
+
+.ek-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.ek-cal-day-header {
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--ek-text-light);
+  padding: 4px 0;
+}
+
+.ek-cal-day {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  border-radius: 12px;
+  position: relative;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ek-cal-day.empty { opacity: 0; }
+
+.ek-cal-day.today {
+  background: var(--ek-pink);
+  color: white;
+  font-weight: bold;
+}
+
+.ek-cal-day.elizabeth-week {
+  background: rgba(255, 182, 193, 0.25);
+}
+
+.ek-cal-day.birthday {
+  background: var(--ek-yellow);
+}
+
+.ek-cal-day .ek-cal-marker {
+  font-size: 0.55rem;
+  position: absolute;
+  bottom: 2px;
+}
+
+/* ─── Notes tab ────────────────────────────────────────────── */
+.ek-note-card {
+  background: white;
+  border-radius: var(--ek-radius);
+  padding: 20px;
+  margin-bottom: 14px;
+  box-shadow: var(--ek-shadow);
+  position: relative;
+  border-left: 5px solid var(--ek-pink);
+}
+
+.ek-note-text {
+  font-size: 1rem;
+  font-family: 'Fredoka One', cursive;
+  line-height: 1.6;
+  color: var(--ek-text);
+}
+
+.ek-note-date {
+  font-size: 0.75rem;
+  color: var(--ek-text-light);
+  margin-top: 8px;
+}
+
+.ek-note-decor {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  font-size: 1.3rem;
+  opacity: 0.3;
+}
+
+.ek-note-heart-btn {
+  margin-top: 10px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 50px;
+  background: var(--ek-pink);
+  color: white;
+  font-family: 'Fredoka One', cursive;
+  font-size: 1rem;
+  cursor: pointer;
+  min-height: 48px;
+  transition: transform 0.2s ease;
+}
+
+.ek-note-heart-btn:active {
+  transform: scale(0.95);
+}
+
+.ek-note-heart-btn.hearted {
+  background: #ff6b8a;
+}
+
+/* Floating hearts */
+.ek-floating-hearts {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+  z-index: 100;
+}
+
+.ek-floating-heart {
+  position: absolute;
+  font-size: 1.8rem;
+  animation: ekHeartFloat 2s ease-out forwards;
+}
+
+@keyframes ekHeartFloat {
+  0% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-200px) scale(0.3); }
+}
+
+.ek-empty-notes {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--ek-text-light);
+  font-size: 1rem;
+}
+
+/* ─── Rewards tab ──────────────────────────────────────────── */
+.ek-star-counter {
+  text-align: center;
+  padding: 24px;
+  background: linear-gradient(135deg, var(--ek-yellow), var(--ek-coral));
+  border-radius: var(--ek-radius);
+  margin-bottom: 16px;
+  box-shadow: var(--ek-shadow);
+}
+
+.ek-star-number {
+  font-size: 3.5rem;
+  color: white;
+  text-shadow: 2px 2px 4px rgba(150, 100, 50, 0.3);
+  animation: ekStarPulse 2s ease-in-out infinite;
+}
+
+@keyframes ekStarPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+.ek-star-label {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.9);
+  margin-top: 4px;
+}
+
+.ek-badge {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  background: white;
+  border-radius: 16px;
+  margin-bottom: 10px;
+  box-shadow: 0 2px 8px rgba(180, 130, 180, 0.12);
+}
+
+.ek-badge.earned {
+  background: linear-gradient(135deg, #fff8e1, #fff3cd);
+  border: 2px solid var(--ek-yellow);
+}
+
+.ek-badge.locked {
+  opacity: 0.4;
+  filter: grayscale(0.5);
+}
+
+.ek-badge-icon {
+  font-size: 2rem;
+}
+
+.ek-badge-info {
+  flex: 1;
+}
+
+.ek-badge-name {
+  font-size: 1rem;
+  color: var(--ek-text);
+}
+
+.ek-badge-req {
+  font-size: 0.8rem;
+  color: var(--ek-text-light);
+  margin-top: 2px;
+}
+
+.ek-encourage {
+  text-align: center;
+  padding: 20px;
+  font-size: 1rem;
+  color: var(--ek-text-light);
+  font-style: italic;
+}
+
+/* ─── Sparkle burst ────────────────────────────────────────── */
+.ek-sparkle-container {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+  z-index: 99;
+}
+
+.ek-sparkle {
+  position: absolute;
+  font-size: 1.5rem;
+  animation: ekSparkleBurst 0.8s ease-out forwards;
+}
+
+@keyframes ekSparkleBurst {
+  0% { opacity: 1; transform: translate(0, 0) scale(1); }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0); }
+}
+
+/* ─── Parent Mode ──────────────────────────────────────────── */
+.elizabeth-app.parent-mode {
+  --ek-bg: #0a0f0a;
+  --ek-text: #18ff6d;
+  --ek-text-light: #0a8a3a;
+  background: #0a0f0a;
+}
+
+.elizabeth-app.parent-mode .ek-header {
+  background: linear-gradient(135deg, #0a2f0a, #1a3f1a);
+  border-bottom-color: #18ff6d;
+}
+
+.elizabeth-app.parent-mode .ek-header h1 {
+  color: #18ff6d;
+  text-shadow: 0 0 10px rgba(24, 255, 109, 0.5);
+}
+
+.elizabeth-app.parent-mode .ek-card,
+.elizabeth-app.parent-mode .ek-task-item,
+.elizabeth-app.parent-mode .ek-badge {
+  background: #111;
+  border: 1px solid #18ff6d33;
+  box-shadow: 0 0 10px rgba(24, 255, 109, 0.1);
+}
+
+.elizabeth-app.parent-mode .ek-tabs {
+  background: #0a0f0a;
+}
+
+.elizabeth-app.parent-mode .ek-tab-btn {
+  background: #1a2f1a;
+  color: #18ff6d;
+  border-color: #18ff6d33;
+}
+
+.elizabeth-app.parent-mode .ek-tab-btn.active {
+  border-color: #18ff6d;
+  box-shadow: 0 0 10px rgba(24, 255, 109, 0.3);
+}
+
+.ek-parent-bar {
+  background: #18ff6d;
+  color: #000;
+  padding: 8px 16px;
+  text-align: center;
+  font-family: 'Fredoka One', cursive;
+  font-size: 0.85rem;
+  letter-spacing: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ek-parent-bar button {
+  background: #000;
+  color: #18ff6d;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-family: 'Fredoka One', cursive;
+  font-size: 0.8rem;
+  cursor: pointer;
+  min-height: 36px;
+}
+
+.ek-pin-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ek-pin-box {
+  background: #111;
+  border: 2px solid #18ff6d;
+  border-radius: 20px;
+  padding: 32px;
+  text-align: center;
+  color: #18ff6d;
+  font-family: 'Fredoka One', cursive;
+  width: 280px;
+}
+
+.ek-pin-box h3 {
+  margin: 0 0 16px;
+  font-size: 1.1rem;
+}
+
+.ek-pin-box input {
+  width: 100%;
+  padding: 12px;
+  font-size: 1.5rem;
+  text-align: center;
+  background: #0a0f0a;
+  border: 2px solid #18ff6d;
+  border-radius: 12px;
+  color: #18ff6d;
+  font-family: monospace;
+  letter-spacing: 8px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.ek-pin-box .ek-pin-error {
+  color: #ff4444;
+  margin-top: 8px;
+  font-size: 0.85rem;
+}
+
+.ek-pin-box button {
+  margin-top: 12px;
+  padding: 10px 24px;
+  background: #18ff6d;
+  color: #000;
+  border: none;
+  border-radius: 12px;
+  font-family: 'Fredoka One', cursive;
+  font-size: 1rem;
+  cursor: pointer;
+  min-height: 48px;
+}
+
+/* Parent mode inputs */
+.ek-parent-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 2px solid #18ff6d33;
+  border-radius: 12px;
+  background: #0a0f0a;
+  color: #18ff6d;
+  font-family: 'Fredoka One', cursive;
+  font-size: 0.95rem;
+  outline: none;
+  box-sizing: border-box;
+  margin-bottom: 8px;
+  min-height: 48px;
+}
+
+.ek-parent-input:focus {
+  border-color: #18ff6d;
+}
+
+.ek-parent-btn {
+  padding: 10px 20px;
+  background: #18ff6d;
+  color: #000;
+  border: none;
+  border-radius: 12px;
+  font-family: 'Fredoka One', cursive;
+  font-size: 0.9rem;
+  cursor: pointer;
+  min-height: 48px;
+  margin-top: 4px;
+}
+
+.ek-parent-task-list {
+  margin-top: 12px;
+}
+
+.ek-parent-task-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #18ff6d22;
+  color: #18ff6d;
+  font-family: 'Fredoka One', cursive;
+  font-size: 0.9rem;
+}
+
+.ek-parent-task-row button {
+  background: none;
+  border: 1px solid #ff444466;
+  color: #ff4444;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-family: 'Fredoka One', cursive;
+  font-size: 0.75rem;
+  cursor: pointer;
+  min-height: 32px;
+}
+
+.ek-star-adjust {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.ek-star-adjust button {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 2px solid #18ff6d;
+  background: #0a0f0a;
+  color: #18ff6d;
+  font-size: 1.5rem;
+  cursor: pointer;
+  font-family: 'Fredoka One', cursive;
+}
+
+.ek-star-adjust span {
+  font-size: 2rem;
+  color: #18ff6d;
+  min-width: 60px;
+  text-align: center;
+}
+
+/* ─── Back to CC link ──────────────────────────────────────── */
+.ek-back-link {
+  display: block;
+  text-align: center;
+  padding: 16px;
+  color: var(--ek-text-light);
+  font-family: 'Fredoka One', cursive;
+  font-size: 0.8rem;
+  text-decoration: none;
+  margin-top: 16px;
+}
+
+.elizabeth-app.parent-mode .ek-back-link {
+  color: #18ff6d66;
+}

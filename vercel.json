@@ -1,5 +1,6 @@
 {
   "rewrites": [
-    { "source": "/api/oura", "destination": "/api/oura" }
+    { "source": "/api/oura", "destination": "/api/oura" },
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

@@ -1,6 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import App from './App';
+import ElizabethApp from './ElizabethApp';
 
 // Global error handler — shows errors on screen if React fails to mount
 window.onerror = function(msg, src, line, col, err) {
@@ -54,7 +56,12 @@ class ErrorBoundary extends React.Component {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   React.createElement(ErrorBoundary, null,
-    React.createElement(App)
+    React.createElement(BrowserRouter, null,
+      React.createElement(Routes, null,
+        React.createElement(Route, { path: '/', element: React.createElement(App) }),
+        React.createElement(Route, { path: '/elizabeth', element: React.createElement(ElizabethApp) })
+      )
+    )
   )
 );
 
