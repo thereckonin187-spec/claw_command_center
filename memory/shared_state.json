@@ -1,0 +1,14 @@
+{
+  "tasks": [],
+  "health": {
+    "weight_log": [],
+    "macro_log": [],
+    "strength_log": []
+  },
+  "meds_taken_today": [],
+  "trt_last_date": "2026-02-22",
+  "oura": null,
+  "weather": null,
+  "chat_id": null,
+  "last_sync": null
+}

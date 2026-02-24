@@ -18,7 +18,71 @@ const WEEKLY_TASKS = [
   "Build Elizabeth Tablet App",
 ];
 
-const NEWS_SCOPE = ["US Politics", "Major World Events", "Economic Events", "Breaking News"];
+const NEWS_CATEGORIES = [
+  { key: "wa", label: "WA STATE", query: "Washington+state", size: 5 },
+  { key: "gaming", label: "GAMING", query: "Xbox+OR+Bethesda+OR+Fallout+game", size: 5 },
+  { key: "releases", label: "RELEASES", query: "new+video+game+releases", size: 3 },
+];
+const NEWS_CAT_COLORS = { wa: "#18d6ff", gaming: "#18ff6d", releases: "#ffb631" };
+
+const WEATHER_LOCATIONS = [
+  { key: "olympia", label: "OLYMPIA (HOME)", lat: 47.0379, lng: -122.9007 },
+  { key: "milton", label: "MILTON (MOM'S)", lat: 47.2487, lng: -122.3154 },
+];
+const WEATHER_CODES = {
+  0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
+  45: "Fog", 48: "Rime fog", 51: "Light drizzle", 53: "Drizzle", 55: "Heavy drizzle",
+  61: "Light rain", 63: "Rain", 65: "Heavy rain", 66: "Freezing rain", 67: "Heavy freezing rain",
+  71: "Light snow", 73: "Snow", 75: "Heavy snow", 77: "Snow grains",
+  80: "Light showers", 81: "Showers", 82: "Heavy showers",
+  85: "Light snow showers", 86: "Heavy snow showers",
+  95: "Thunderstorm", 96: "Thunderstorm w/ hail", 99: "Thunderstorm w/ heavy hail",
+};
+
+function getWeatherIcon(code) {
+  if (code <= 1) return "[CLR]";
+  if (code <= 3) return "[CLD]";
+  if (code <= 48) return "[FOG]";
+  if (code <= 55) return "[DRZ]";
+  if (code <= 67) return "[RN]";
+  if (code <= 77) return "[SNW]";
+  if (code <= 82) return "[SHR]";
+  if (code <= 86) return "[S/S]";
+  return "[THR]";
+}
+
+function getWeatherCondition(code) {
+  return WEATHER_CODES[code] || "Unknown";
+}
+
+function getTempColor(temp) {
+  if (temp < 40) return "#18d6ff";
+  if (temp > 80) return "#ffb631";
+  return "#18ff6d";
+}
+
+function getWeatherSuggestions(data) {
+  if (!data?.current) return [];
+  const suggestions = [];
+  const code = data.current.weather_code;
+  const temp = data.current.temperature_2m;
+  const wind = data.current.wind_speed_10m;
+  const dailyCodes = data.daily?.weather_code || [];
+  const hasRainToday = [51,53,55,61,63,65,66,67,80,81,82].includes(code) || (dailyCodes[0] >= 51 && dailyCodes[0] <= 82);
+  if (hasRainToday) {
+    suggestions.push({ icon: "[RN]", text: "Rain expected — move outdoor tasks indoors or bring rain gear", severity: "warn" });
+  }
+  if (code <= 2 && temp >= 45 && temp <= 85 && wind < 20) {
+    suggestions.push({ icon: "[CLR]", text: "Good conditions for outdoor work", severity: "good" });
+  }
+  if (temp < 33) {
+    suggestions.push({ icon: "[SNW]", text: "Freezing temps — check pipes, dress in layers", severity: "alert" });
+  }
+  if (wind > 25) {
+    suggestions.push({ icon: "[!]", text: "High wind (>" + Math.round(wind) + " mph) — secure loose items outside", severity: "warn" });
+  }
+  return suggestions;
+}
 
 const EXPENSE_CATEGORIES = ["Housing", "Food", "Transport", "Health", "Entertainment", "Bills", "Other"];
 const EVENT_CATEGORIES = ["work", "personal", "health", "family"];
@@ -99,10 +163,10 @@ function loadStorage(key, fallback) {
 }
 
 // Migrate localStorage keys from ccc_ to cc_ (one-time, preserves all data)
-(function migrateStorageKeys() {
+try {
   const suffixes = ["last_reset","tasks","weights","strength","macros","news",
     "trt_last","oura","calendar","finances","chat","daily_reports",
-    "daily_activity","meds","meds_taken","med_analysis","wellness_log","water","wellness_last"];
+    "daily_activity","meds","meds_taken","med_analysis","wellness_log","water","wellness_last","weather"];
   suffixes.forEach((s) => {
     const old = localStorage.getItem(`ccc_${s}`);
     if (old !== null && localStorage.getItem(`cc_${s}`) === null) {
@@ -110,7 +174,7 @@ function loadStorage(key, fallback) {
       localStorage.removeItem(`ccc_${s}`);
     }
   });
-})();
+} catch { /* ignore migration errors */ }
 
 function timeAgo(dateString) {
   const now = new Date();
@@ -155,33 +219,92 @@ function migrateTasks(tasks) {
     dueDate: t.dueDate || null,
     priority: t.priority || "med",
     completedAt: t.completedAt || null,
+    outdoor: t.outdoor || false,
   }));
 }
 
-// ─── WORKOUT ANIMATION DATA ─────────────────────────────────
-const EXERCISE_ANIM_MAP = {
-  "barbell bench press": "bench", "bench press": "bench", "dumbbell bench": "bench", "incline dumbbell press": "bench",
-  "barbell squat": "squat", "goblet squat": "squat",
-  "front squat": "frontsquat",
-  "deadlift": "deadlift", "conventional deadlift": "deadlift",
-  "overhead press": "ohp", "ohp": "ohp", "military press": "ohp",
-  "barbell row": "row", "seated cable row": "row", "dumbbell row": "row",
-  "pull-ups": "pullup", "pullups": "pullup", "chin-ups": "pullup", "lat pulldown": "pullup",
-  "leg press": "legpress",
-  "walking lunges": "lunge", "lunges": "lunge",
-  "barbell curl": "curl", "dumbbell curl": "curl", "hammer curl": "curl",
-  "lateral raises": "lateral", "lateral raise": "lateral",
-  "cable flyes": "flyes", "dumbbell flyes": "flyes", "chest flyes": "flyes",
-  "romanian deadlift": "rdl", "rdl": "rdl",
-  "leg curl": "legcurl", "hamstring curl": "legcurl",
-  "calf raises": "calves", "calf raise": "calves",
-  "face pulls": "facepull", "face pull": "facepull",
-  "dips": "dip", "tricep dips": "dip",
-  "hip thrust": "hipthrust", "barbell hip thrust": "hipthrust",
-  "ab wheel": "abwheel", "hanging leg raise": "abwheel",
-  "farmer's walk": "farmerwalk", "farmer walk": "farmerwalk",
-  "bulgarian split squat": "bulgariansplitsquat",
+// ─── EXERCISE VIDEO IDS (YouTube) ────────────────────────────
+const EXERCISE_VIDEOS = {
+  "Barbell Bench Press": "rT7DgCr-3pg",
+  "Incline DB Press": "8iPEnn-ltC8",
+  "Cable Flyes": "Iwe6AmxVf7o",
+  "Overhead Press": "2yjwXTZQDDI",
+  "Lateral Raises": "3VcKaXpzqRo",
+  "Barbell Squat": "ultWZbUMPL8",
+  "Romanian Deadlift": "7j-2w4-P14I",
+  "Leg Press": "IZxyjW7MPJQ",
+  "Leg Curl": "1Tq3QdYUuHs",
+  "Calf Raises": "gwLzBJYoWlI",
+  "Barbell Row": "FWJR5Ve8bnQ",
+  "Pull-ups": "eGo4IYlbE5g",
+  "Seated Cable Row": "GZbfZ033f74",
+  "Face Pulls": "rep-qVOkqgk",
+  "Barbell Curl": "kwG2ipFRgFo",
+  "Deadlift": "op9kVnSso6Q",
+  "Front Squat": "m4ytaCJZpl0",
+  "Walking Lunges": "L8fvypPrzzs",
+  "Hanging Leg Raise": "hdng3Nm1x_E",
+  "Farmer's Walk": "Fkzk_RqlYig",
+  "Dips": "2z8JmcrW-As",
+  "Hip Thrust": "SEdqd1n0cvg",
+  "Ab Wheel": "rqiTPyo0tCE",
+  "DB Bench Press": "VmB1G1K7v94",
+  "Pec Deck": "Iwe6AmxVf7o",
+  "Arnold Press": "6Z15_WdXmVw",
+  "Cable Lateral Raise": "3VcKaXpzqRo",
+  "Bulgarian Split Squat": "2C-uNgKwPLE",
+  "Hack Squat": "0tn5K9NlCfo",
+  "Nordic Curl": "d8VjEETMOSU",
+  "Seated Calf Raise": "JbyjNymZOt0",
+  "Weighted Pull-ups": "eGo4IYlbE5g",
+  "Pendlay Row": "FWJR5Ve8bnQ",
+  "Lat Pulldown": "CAwf7n6Luuc",
+  "Rear Delt Fly": "rep-qVOkqgk",
+  "Hammer Curl": "zC3nLlEBfnE",
+  "Sumo Deadlift": "op9kVnSso6Q",
+  "Goblet Squat": "MeIiIdhvXT4",
+  "Suitcase Carry": "Fkzk_RqlYig",
 };
+
+function getExerciseVideoId(name) {
+  const lower = name.toLowerCase().trim();
+  for (const [key, id] of Object.entries(EXERCISE_VIDEOS)) {
+    if (key.toLowerCase() === lower || lower.includes(key.toLowerCase()) || key.toLowerCase().includes(lower)) return id;
+  }
+  return null;
+}
+
+function getFormCueKey(name) {
+  const lower = name.toLowerCase().trim();
+  const map = {
+    "barbell bench press": "bench", "bench press": "bench", "dumbbell bench": "bench", "incline dumbbell press": "bench", "incline db press": "bench",
+    "barbell squat": "squat", "goblet squat": "squat",
+    "front squat": "frontsquat",
+    "deadlift": "deadlift", "conventional deadlift": "deadlift",
+    "overhead press": "ohp", "ohp": "ohp", "military press": "ohp",
+    "barbell row": "row", "seated cable row": "row", "dumbbell row": "row",
+    "pull-ups": "pullup", "pullups": "pullup", "chin-ups": "pullup", "lat pulldown": "pullup",
+    "leg press": "legpress",
+    "walking lunges": "lunge", "lunges": "lunge",
+    "barbell curl": "curl", "dumbbell curl": "curl", "hammer curl": "curl",
+    "lateral raises": "lateral", "lateral raise": "lateral",
+    "cable flyes": "flyes", "dumbbell flyes": "flyes", "chest flyes": "flyes",
+    "romanian deadlift": "rdl", "rdl": "rdl",
+    "leg curl": "legcurl", "hamstring curl": "legcurl",
+    "calf raises": "calves", "calf raise": "calves",
+    "face pulls": "facepull", "face pull": "facepull",
+    "dips": "dip", "tricep dips": "dip",
+    "hip thrust": "hipthrust", "barbell hip thrust": "hipthrust",
+    "ab wheel": "abwheel", "hanging leg raise": "abwheel",
+    "farmer's walk": "farmerwalk", "farmer walk": "farmerwalk",
+    "bulgarian split squat": "bulgariansplitsquat",
+  };
+  if (map[lower]) return map[lower];
+  for (const [pattern, key] of Object.entries(map)) {
+    if (lower.includes(pattern) || pattern.includes(lower)) return key;
+  }
+  return "generic";
+}
 
 const FORM_CUES = {
   bench: { cues: ["Retract scapula, arch upper back", "Bar path: slight diagonal to chest", "Drive feet into floor"], muscles: { primary: ["Chest", "Triceps"], secondary: ["Front Delts"] }, mistakes: ["Flared elbows past 75\u00B0", "Bouncing bar off chest"] },
@@ -208,48 +331,12 @@ const FORM_CUES = {
   generic: { cues: ["Focus on form over weight", "Control the movement", "Full range of motion"], muscles: { primary: ["Full Body"], secondary: [] }, mistakes: ["Ego lifting", "Partial reps"] },
 };
 
-function getAnimationKey(name) {
-  const lower = name.toLowerCase().trim();
-  if (EXERCISE_ANIM_MAP[lower]) return EXERCISE_ANIM_MAP[lower];
-  for (const [pattern, key] of Object.entries(EXERCISE_ANIM_MAP)) {
-    if (lower.includes(pattern) || pattern.includes(lower)) return key;
-  }
-  return "generic";
-}
-
 function parseSets(setsStr) {
   if (!setsStr) return { numSets: 3, reps: "8", isVariable: false };
   const match = setsStr.match(/^(\d+)x(.+)$/i);
   if (!match) return { numSets: 3, reps: setsStr, isVariable: true };
   return { numSets: parseInt(match[1]), reps: match[2], isVariable: /amrap|\/leg|m$/i.test(match[2]) };
 }
-
-const _G = "#18ff6d", _D = "#0a9e3a", _B = "#063d18";
-const _muscDef = `<defs><radialGradient id="mg" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="${_G}" stop-opacity=".25"/><stop offset="100%" stop-color="${_G}" stop-opacity="0"/></radialGradient></defs>`;
-const EXERCISE_SVGS = {
-  bench: `<svg viewBox="0 0 200 250" xmlns="http://www.w3.org/2000/svg">${_muscDef}<rect x="35" y="135" width="130" height="8" rx="3" fill="${_D}"/><rect x="60" y="143" width="8" height="40" fill="${_D}"/><rect x="132" y="143" width="8" height="40" fill="${_D}"/><!-- body on bench --><ellipse cx="100" cy="120" rx="12" ry="10" fill="none" stroke="${_G}" stroke-width="2"/><path d="M82,125 Q80,135 82,155 L100,160 L118,155 Q120,135 118,125 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M92,132 Q100,138 108,132" fill="none" stroke="${_G}" stroke-width=".8" opacity=".5"/><path d="M100,160 L88,200 L85,230" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M100,160 L112,200 L115,230" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><g class="anim-bench-arms"><path d="M84,128 Q70,115 60,95 L55,80" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M116,128 Q130,115 140,95 L145,80" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><rect x="35" y="76" width="130" height="6" rx="2" fill="${_G}"/><rect x="25" y="73" width="16" height="12" rx="3" fill="${_D}"/><rect x="159" y="73" width="16" height="12" rx="3" fill="${_D}"/><line x1="55" y1="72" x2="50" y2="68" stroke="${_G}" stroke-width="1" opacity=".4"/><line x1="145" y1="72" x2="150" y2="68" stroke="${_G}" stroke-width="1" opacity=".4"/></g></svg>`,
-  squat: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<g class="anim-squat"><ellipse cx="100" cy="28" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="42" x2="100" y2="52" stroke="${_G}" stroke-width="2.5"/><path d="M82,52 Q78,72 80,100 L85,130 L100,135 L115,130 L120,100 Q122,72 118,52 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M90,65 Q100,72 110,65" fill="none" stroke="${_G}" stroke-width=".8" opacity=".5"/><path d="M92,85 L92,110" fill="none" stroke="${_G}" stroke-width=".6" opacity=".4"/><path d="M108,85 L108,110" fill="none" stroke="${_G}" stroke-width=".6" opacity=".4"/><path d="M82,55 Q70,60 65,75 L68,90" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M118,55 Q130,60 135,75 L132,90" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M90,132 Q80,160 76,190" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M76,190 Q74,215 72,245" fill="none" stroke="${_G}" stroke-width="2.4" stroke-linecap="round"/><path d="M72,245 L65,260 L80,260" fill="none" stroke="${_G}" stroke-width="1.8"/><path d="M110,132 Q120,160 124,190" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M124,190 Q126,215 128,245" fill="none" stroke="${_G}" stroke-width="2.4" stroke-linecap="round"/><path d="M128,245 L135,260 L120,260" fill="none" stroke="${_G}" stroke-width="1.8"/></g><line x1="48" y1="48" x2="152" y2="48" stroke="${_G}" stroke-width="3.5" stroke-linecap="round"/><rect x="35" y="42" width="18" height="12" rx="3" fill="${_D}"/><rect x="147" y="42" width="18" height="12" rx="3" fill="${_D}"/></svg>`,
-  deadlift: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<g class="anim-deadlift"><ellipse cx="100" cy="30" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="44" x2="100" y2="54" stroke="${_G}" stroke-width="2.5"/><path d="M82,54 Q78,74 80,100 L85,130 L100,135 L115,130 L120,100 Q122,74 118,54 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M82,56 Q72,65 65,85 L62,110" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M62,110 L65,135 L70,140" fill="none" stroke="${_G}" stroke-width="2" stroke-linecap="round"/><path d="M118,56 Q128,65 135,85 L138,110" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M138,110 L135,135 L130,140" fill="none" stroke="${_G}" stroke-width="2" stroke-linecap="round"/><path d="M90,132 Q82,158 78,190" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M78,190 L75,220 L73,248" fill="none" stroke="${_G}" stroke-width="2.4" stroke-linecap="round"/><path d="M73,248 L66,262 L80,262" fill="none" stroke="${_G}" stroke-width="1.8"/><path d="M110,132 Q118,158 122,190" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M122,190 L125,220 L127,248" fill="none" stroke="${_G}" stroke-width="2.4" stroke-linecap="round"/><path d="M127,248 L134,262 L120,262" fill="none" stroke="${_G}" stroke-width="1.8"/></g><line x1="42" y1="140" x2="158" y2="140" stroke="${_G}" stroke-width="3.5" stroke-linecap="round"/><rect x="28" y="134" width="20" height="12" rx="3" fill="${_D}"/><rect x="152" y="134" width="20" height="12" rx="3" fill="${_D}"/></svg>`,
-  ohp: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<ellipse cx="100" cy="50" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="64" x2="100" y2="74" stroke="${_G}" stroke-width="2.5"/><path d="M82,74 Q78,94 80,120 L85,150 L100,155 L115,150 L120,120 Q122,94 118,74 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M100,155 L88,200 L85,245 L78,262 L92,262" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M100,155 L112,200 L115,245 L122,262 L108,262" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><g class="anim-ohp"><path d="M82,76 Q68,72 60,55 L58,35" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M58,35 L55,18" fill="none" stroke="${_G}" stroke-width="2" stroke-linecap="round"/><path d="M118,76 Q132,72 140,55 L142,35" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M142,35 L145,18" fill="none" stroke="${_G}" stroke-width="2" stroke-linecap="round"/><line x1="38" y1="16" x2="162" y2="16" stroke="${_G}" stroke-width="3.5" stroke-linecap="round"/><rect x="25" y="10" width="18" height="12" rx="3" fill="${_D}"/><rect x="157" y="10" width="18" height="12" rx="3" fill="${_D}"/></g></svg>`,
-  row: `<svg viewBox="0 0 200 260" xmlns="http://www.w3.org/2000/svg">${_muscDef}<ellipse cx="80" cy="40" rx="11" ry="13" fill="none" stroke="${_G}" stroke-width="2"/><path d="M80,53 L100,110" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M68,60 Q62,80 64,110 L68,130 L80,135 L92,130 L96,110 Q98,80 92,60 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.5" transform="rotate(25,80,95)"/><path d="M100,110 L88,160 L82,210 L78,240" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M100,110 L108,160 L112,210 L115,240" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><g class="anim-row"><path d="M85,75 Q70,85 55,105 L50,120" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M92,75 Q110,80 125,90 L130,105" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/></g><line x1="35" y1="155" x2="155" y2="155" stroke="${_G}" stroke-width="3" stroke-linecap="round"/><rect x="22" y="149" width="18" height="12" rx="3" fill="${_D}"/><rect x="150" y="149" width="18" height="12" rx="3" fill="${_D}"/></svg>`,
-  pullup: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<line x1="30" y1="18" x2="170" y2="18" stroke="${_D}" stroke-width="5" stroke-linecap="round"/><rect x="26" y="12" width="6" height="268" fill="${_B}"/><rect x="168" y="12" width="6" height="268" fill="${_B}"/><g class="anim-pullup"><ellipse cx="100" cy="55" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="69" x2="100" y2="79" stroke="${_G}" stroke-width="2.5"/><path d="M82,79 Q78,99 80,125 L85,155 L100,160 L115,155 L120,125 Q122,99 118,79 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M82,82 Q65,65 55,30 L54,22" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M118,82 Q135,65 145,30 L146,22" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M100,160 L90,205 L85,250" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M100,160 L110,205 L115,250" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/></g></svg>`,
-  legpress: `<svg viewBox="0 0 200 220" xmlns="http://www.w3.org/2000/svg">${_muscDef}<rect x="120" y="20" width="60" height="180" rx="4" fill="none" stroke="${_D}" stroke-width="2.5"/><line x1="150" y1="20" x2="150" y2="200" stroke="${_D}" stroke-width="1" opacity=".3"/><ellipse cx="65" cy="80" rx="11" ry="13" fill="none" stroke="${_G}" stroke-width="2"/><path d="M55,93 L55,140" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M48,95 Q44,110 46,130 L50,150 L65,155 L80,150 L84,130 Q86,110 82,95 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.5"/><g class="anim-legpress"><path d="M65,150 Q80,130 95,115 L120,105" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M65,155 Q82,148 98,135 L120,130" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/></g></svg>`,
-  lunge: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<ellipse cx="100" cy="28" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="42" x2="100" y2="52" stroke="${_G}" stroke-width="2.5"/><path d="M84,52 Q80,72 82,100 L86,128 L100,133 L114,128 L118,100 Q120,72 116,52 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M84,55 L68,72 L60,82" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M116,55 L132,72 L140,82" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><g class="anim-lunge"><path d="M92,130 Q75,158 62,190 L55,220 L50,255" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M50,255 L42,268 L58,268" fill="none" stroke="${_G}" stroke-width="1.8"/><path d="M108,130 Q125,158 135,190 L138,220 L140,255" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M140,255 L148,268 L132,268" fill="none" stroke="${_G}" stroke-width="1.8"/></g></svg>`,
-  curl: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<ellipse cx="100" cy="28" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="42" x2="100" y2="52" stroke="${_G}" stroke-width="2.5"/><path d="M84,52 Q80,72 82,100 L86,128 L100,133 L114,128 L118,100 Q120,72 116,52 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M100,133 L90,180 L86,230 L80,258 L92,258" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M100,133 L110,180 L114,230 L120,258 L108,258" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M116,55 L132,70 L138,95 L135,115" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><rect x="130" y="112" width="12" height="8" rx="3" fill="${_D}"/><g class="anim-curl"><path d="M84,55 L68,65 L62,80 L60,95" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M60,95 L62,75 L68,60" fill="none" stroke="${_G}" stroke-width="2" stroke-linecap="round"/><rect x="58" y="55" width="14" height="8" rx="3" fill="${_D}"/></g></svg>`,
-  lateral: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<ellipse cx="100" cy="28" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="42" x2="100" y2="52" stroke="${_G}" stroke-width="2.5"/><path d="M84,52 Q80,72 82,100 L86,128 L100,133 L114,128 L118,100 Q120,72 116,52 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M100,133 L90,180 L86,230 L80,258 L92,258" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M100,133 L110,180 L114,230 L120,258 L108,258" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><g class="anim-lateral"><path d="M84,56 L55,52 L35,55" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M116,56 L145,52 L165,55" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><rect x="25" y="50" width="12" height="8" rx="3" fill="${_D}"/><rect x="163" y="50" width="12" height="8" rx="3" fill="${_D}"/></g></svg>`,
-  flyes: `<svg viewBox="0 0 200 220" xmlns="http://www.w3.org/2000/svg">${_muscDef}<rect x="35" y="120" width="130" height="8" rx="3" fill="${_D}"/><ellipse cx="100" cy="108" rx="12" ry="10" fill="none" stroke="${_G}" stroke-width="2"/><path d="M82,112 Q80,122 82,140 L100,148 L118,140 Q120,122 118,112 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.5"/><path d="M100,148 L88,180 L85,210" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M100,148 L112,180 L115,210" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><g class="anim-flyes"><path d="M84,114 Q65,100 45,80 L35,68" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M116,114 Q135,100 155,80 L165,68" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><rect x="28" y="63" width="12" height="8" rx="3" fill="${_D}"/><rect x="160" y="63" width="12" height="8" rx="3" fill="${_D}"/></g></svg>`,
-  rdl: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<g class="anim-rdl"><ellipse cx="85" cy="35" rx="11" ry="13" fill="none" stroke="${_G}" stroke-width="2"/><path d="M85,48 L105,105" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M75,55 Q70,75 72,100 L76,125 L88,130 L100,125 L104,100 Q106,75 101,55 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.5" transform="rotate(20,88,90)"/><path d="M90,70 Q75,80 62,100 L55,120" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M98,70 Q115,75 130,85 L135,100" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/></g><path d="M105,105 L95,160 L90,210 L86,250" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M105,105 L115,160 L118,210 L120,250" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><line x1="35" y1="120" x2="165" y2="120" stroke="${_G}" stroke-width="3" stroke-linecap="round"/><rect x="22" y="114" width="18" height="12" rx="3" fill="${_D}"/><rect x="160" y="114" width="18" height="12" rx="3" fill="${_D}"/></svg>`,
-  legcurl: `<svg viewBox="0 0 200 180" xmlns="http://www.w3.org/2000/svg">${_muscDef}<rect x="20" y="60" width="160" height="10" rx="4" fill="${_D}"/><ellipse cx="55" cy="48" rx="10" ry="12" fill="none" stroke="${_G}" stroke-width="2"/><path d="M65,52 Q70,58 70,70 L115,70 L115,55 Q115,52 112,50 L68,50 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.5"/><g class="anim-legcurl"><path d="M115,58 Q135,60 148,72 L155,90" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M155,90 L145,115 L130,130" fill="none" stroke="${_G}" stroke-width="2.4" stroke-linecap="round"/></g></svg>`,
-  calves: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<ellipse cx="100" cy="28" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="42" x2="100" y2="52" stroke="${_G}" stroke-width="2.5"/><path d="M84,52 Q80,72 82,100 L86,128 L100,133 L114,128 L118,100 Q120,72 116,52 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M84,55 L68,70 L60,80" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M116,55 L132,70 L140,80" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M92,130 L86,170 L82,200" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M108,130 L114,170 L118,200" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><g class="anim-calves"><path d="M82,200 Q80,220 78,242" fill="none" stroke="${_G}" stroke-width="2.4" stroke-linecap="round"/><path d="M118,200 Q120,220 122,242" fill="none" stroke="${_G}" stroke-width="2.4" stroke-linecap="round"/><path d="M78,242 L72,258 L88,258" fill="none" stroke="${_G}" stroke-width="1.8"/><path d="M122,242 L128,258 L112,258" fill="none" stroke="${_G}" stroke-width="1.8"/></g><rect x="60" y="256" width="80" height="6" rx="2" fill="${_D}"/></svg>`,
-  facepull: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<rect x="168" y="10" width="10" height="260" rx="3" fill="${_B}"/><line x1="173" y1="80" x2="150" y2="80" stroke="${_D}" stroke-width="2.5"/><ellipse cx="80" cy="40" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="80" y1="54" x2="80" y2="64" stroke="${_G}" stroke-width="2.5"/><path d="M64,64 Q60,84 62,110 L66,138 L80,143 L94,138 L98,110 Q100,84 96,64 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M80,143 L70,190 L66,240 L60,262 L76,262" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M80,143 L90,190 L94,240 L100,262 L84,262" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><g class="anim-facepull"><path d="M96,68 L115,55 L135,48 L148,50" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M96,74 L115,65 L135,60 L148,62" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/></g></svg>`,
-  dip: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<line x1="20" y1="85" x2="75" y2="85" stroke="${_D}" stroke-width="5" stroke-linecap="round"/><line x1="125" y1="85" x2="180" y2="85" stroke="${_D}" stroke-width="5" stroke-linecap="round"/><g class="anim-dip"><ellipse cx="100" cy="55" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="69" x2="100" y2="79" stroke="${_G}" stroke-width="2.5"/><path d="M84,79 Q80,99 82,125 L86,153 L100,158 L114,153 L118,125 Q120,99 116,79 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M84,82 Q70,82 62,85 L58,85" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M116,82 Q130,82 138,85 L142,85" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M100,158 L90,205 L85,250" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M100,158 L110,205 L115,250" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/></g></svg>`,
-  hipthrust: `<svg viewBox="0 0 200 180" xmlns="http://www.w3.org/2000/svg">${_muscDef}<rect x="10" y="80" width="50" height="40" rx="4" fill="${_D}"/><ellipse cx="52" cy="65" rx="10" ry="12" fill="none" stroke="${_G}" stroke-width="2"/><g class="anim-hipthrust"><path d="M55,77 Q70,72 90,65 L110,60" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M50,80 Q60,82 75,80 L110,65" fill="url(#mg)" stroke="${_G}" stroke-width="1.5"/><path d="M110,60 Q125,70 135,88 L138,110 L132,140" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M110,65 Q130,78 142,95 L148,118 L145,148" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/></g></svg>`,
-  abwheel: `<svg viewBox="0 0 200 180" xmlns="http://www.w3.org/2000/svg">${_muscDef}<circle cx="130" cy="135" r="18" fill="none" stroke="${_D}" stroke-width="4"/><line x1="118" y1="135" x2="142" y2="135" stroke="${_G}" stroke-width="2.5"/><g class="anim-abwheel"><ellipse cx="60" cy="60" rx="11" ry="13" fill="none" stroke="${_G}" stroke-width="2"/><path d="M60,73 L80,110 L110,130" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M52,70 Q46,85 48,105 L52,125 L65,130 L78,125 L82,105 Q84,85 78,70 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.3" transform="rotate(30,65,100)"/><path d="M60,73 L78,90 L112,128" fill="none" stroke="${_G}" stroke-width="2" stroke-linecap="round"/><path d="M80,110 L65,145 L58,160" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M80,110 L85,145 L88,160" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/></g></svg>`,
-  frontsquat: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<g class="anim-frontsquat"><ellipse cx="100" cy="28" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="42" x2="100" y2="52" stroke="${_G}" stroke-width="2.5"/><path d="M82,52 Q78,72 80,100 L85,130 L100,135 L115,130 L120,100 Q122,72 118,52 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M82,55 Q68,60 62,72 L60,82" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M118,55 Q132,60 138,72 L140,82" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M90,132 Q80,160 76,190 L74,220 L72,248" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M72,248 L65,262 L80,262" fill="none" stroke="${_G}" stroke-width="1.8"/><path d="M110,132 Q120,160 124,190 L126,220 L128,248" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M128,248 L135,262 L120,262" fill="none" stroke="${_G}" stroke-width="1.8"/></g><line x1="50" y1="68" x2="150" y2="68" stroke="${_G}" stroke-width="3.5" stroke-linecap="round"/><rect x="37" y="62" width="18" height="12" rx="3" fill="${_D}"/><rect x="145" y="62" width="18" height="12" rx="3" fill="${_D}"/></svg>`,
-  bulgariansplitsquat: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<rect x="140" y="170" width="45" height="30" rx="4" fill="${_D}"/><ellipse cx="90" cy="28" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="90" y1="42" x2="90" y2="52" stroke="${_G}" stroke-width="2.5"/><path d="M74,52 Q70,72 72,100 L76,128 L90,133 L104,128 L108,100 Q110,72 106,52 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M74,55 L58,70 L52,82" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M106,55 L122,70 L128,82" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><g class="anim-bulgariansplitsquat"><path d="M82,130 Q68,160 58,195 L52,230 L48,258" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M48,258 L40,270 L56,270" fill="none" stroke="${_G}" stroke-width="1.8"/><path d="M98,130 Q115,150 130,168 L142,175" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/></g></svg>`,
-  farmerwalk: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<g class="anim-farmerwalk"><ellipse cx="100" cy="28" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="42" x2="100" y2="52" stroke="${_G}" stroke-width="2.5"/><path d="M84,52 Q80,72 82,100 L86,128 L100,133 L114,128 L118,100 Q120,72 116,52 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M84,55 L68,70 L58,95 L55,120 L55,145" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M116,55 L132,70 L142,95 L145,120 L145,145" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><rect x="48" y="142" width="16" height="10" rx="3" fill="${_D}"/><rect x="138" y="142" width="16" height="10" rx="3" fill="${_D}"/><path d="M92,130 Q82,160 78,195 L75,230 L72,255" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M72,255 L65,268 L80,268" fill="none" stroke="${_G}" stroke-width="1.8"/><path d="M108,130 Q118,160 122,195 L125,230 L128,255" fill="none" stroke="${_G}" stroke-width="2.8" stroke-linecap="round"/><path d="M128,255 L135,268 L120,268" fill="none" stroke="${_G}" stroke-width="1.8"/></g></svg>`,
-  generic: `<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">${_muscDef}<ellipse cx="100" cy="28" rx="12" ry="14" fill="none" stroke="${_G}" stroke-width="2"/><line x1="100" y1="42" x2="100" y2="52" stroke="${_G}" stroke-width="2.5"/><g class="anim-generic"><path d="M84,52 Q80,72 82,100 L86,128 L100,133 L114,128 L118,100 Q120,72 116,52 Z" fill="url(#mg)" stroke="${_G}" stroke-width="1.8"/><path d="M84,55 L62,70 L50,85" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M116,55 L138,70 L150,85" fill="none" stroke="${_G}" stroke-width="2.2" stroke-linecap="round"/><path d="M92,130 Q82,160 78,195 L75,230 L72,255" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M72,255 L65,268 L80,268" fill="none" stroke="${_G}" stroke-width="1.8"/><path d="M108,130 Q118,160 122,195 L125,230 L128,255" fill="none" stroke="${_G}" stroke-width="2.5" stroke-linecap="round"/><path d="M128,255 L135,268 L120,268" fill="none" stroke="${_G}" stroke-width="1.8"/></g></svg>`,
-};
 
 function autoResetTasks(tasks) {
   const lastReset = loadStorage("cc_last_reset", null);
@@ -541,8 +628,9 @@ const globalCSS = `
   .workout-exercise-display { text-align:center;padding:16px;border:1px solid var(--pip-border);background:rgba(5,20,10,.5);margin-bottom:16px; }
   .workout-exercise-name { font-size:1.1rem;letter-spacing:3px;text-transform:uppercase;color:var(--pip-green);text-shadow:var(--pip-text-glow);margin-bottom:8px; }
   .workout-set-info { font-size:.75rem;color:var(--pip-green-dim);letter-spacing:2px;margin-bottom:12px; }
-  .workout-animation { display:flex;justify-content:center;margin:16px 0; }
-  .workout-animation svg { width:200px;height:250px; }
+  .workout-video-btn { display:flex;align-items:center;justify-content:center;gap:8px;margin:16px auto;padding:12px 24px;background:rgba(255,0,0,.12);border:1px solid rgba(255,68,68,.4);color:#ff4444;font-family:'Share Tech Mono',monospace;font-size:.75rem;letter-spacing:2px;text-transform:uppercase;cursor:pointer;transition:all .2s;text-decoration:none;max-width:260px; }
+  .workout-video-btn:hover { background:rgba(255,0,0,.22);border-color:#ff4444;text-shadow:0 0 8px rgba(255,68,68,.6);box-shadow:0 0 12px rgba(255,0,0,.15); }
+  .workout-video-btn svg { width:18px;height:18px;fill:#ff4444; }
   .workout-cues { border:1px solid rgba(24,255,109,.1);background:rgba(10,30,15,.3);padding:12px;margin-bottom:16px; }
   .workout-cue-item { font-size:.7rem;color:var(--pip-green-dim);padding:3px 0;letter-spacing:1px; }
   .workout-cue-item::before { content:'> ';color:var(--pip-green); }
@@ -559,6 +647,9 @@ const globalCSS = `
   .workout-btn.primary { background:rgba(24,255,109,.2);border-color:var(--pip-green);text-shadow:var(--pip-text-glow); }
   .workout-btn.danger { border-color:#ff4444;color:#ff4444; }
   .workout-btn.danger:hover { background:rgba(255,68,68,.15);text-shadow:0 0 8px rgba(255,68,68,.6); }
+
+  .workout-video-embed { position:relative;width:100%;padding-top:56.25%;margin-bottom:16px;border:1px solid rgba(255,68,68,.3);background:#000; }
+  .workout-video-embed iframe { position:absolute;top:0;left:0;width:100%;height:100%;border:none; }
 
   .rest-timer-overlay { position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:50; }
   .rest-timer-value { font-size:4rem;color:var(--pip-amber);text-shadow:0 0 30px rgba(255,182,49,.6);font-family:'Share Tech Mono',monospace;letter-spacing:6px; }
@@ -593,56 +684,46 @@ const globalCSS = `
   .report-history-item { padding:10px 12px;border:1px solid rgba(24,255,109,.1);margin-bottom:4px;background:rgba(10,30,15,.3);cursor:pointer;font-size:.78rem;display:flex;justify-content:space-between;transition:all .15s; }
   .report-history-item:hover { background:rgba(24,255,109,.08);border-color:rgba(24,255,109,.3); }
 
-  /* Workout animations */
-  /* Enhanced multi-step workout keyframes */
-  @keyframes benchArms { 0%{transform:translateY(0)}10%{transform:translateY(2px)}45%{transform:translateY(-22px)}55%{transform:translateY(-22px)}90%{transform:translateY(-2px)}100%{transform:translateY(0)} }
-  @keyframes squatDown { 0%{transform:translateY(0) scaleY(1)}10%{transform:translateY(2px)}40%{transform:translateY(28px) scaleY(.88)}52%{transform:translateY(28px) scaleY(.88)}85%{transform:translateY(3px)}100%{transform:translateY(0) scaleY(1)} }
-  @keyframes deadliftPull { 0%{transform:translateY(0) rotate(0)}10%{transform:translateY(1px)}48%{transform:translateY(-16px) rotate(-7deg)}58%{transform:translateY(-16px) rotate(-7deg)}90%{transform:translateY(-2px) rotate(-1deg)}100%{transform:translateY(0) rotate(0)} }
-  @keyframes ohpArms { 0%{transform:translateY(0)}10%{transform:translateY(1px)}42%{transform:translateY(-18px)}54%{transform:translateY(-18px)}88%{transform:translateY(-2px)}100%{transform:translateY(0)} }
-  @keyframes rowPull { 0%{transform:translateX(0)}10%{transform:translateX(1px)}42%{transform:translateX(-14px)}54%{transform:translateX(-14px)}88%{transform:translateX(-2px)}100%{transform:translateX(0)} }
-  @keyframes pullupBody { 0%{transform:translateY(0)}10%{transform:translateY(1px)}45%{transform:translateY(-22px)}55%{transform:translateY(-22px)}88%{transform:translateY(-2px)}100%{transform:translateY(0)} }
-  @keyframes legpressLegs { 0%{transform:translateX(0)}10%{transform:translateX(1px)}42%{transform:translateX(12px)}54%{transform:translateX(12px)}88%{transform:translateX(1px)}100%{transform:translateX(0)} }
-  @keyframes lungeDown { 0%{transform:translateY(0)}10%{transform:translateY(2px)}42%{transform:translateY(18px)}54%{transform:translateY(18px)}88%{transform:translateY(2px)}100%{transform:translateY(0)} }
-  @keyframes curlArm { 0%{transform:rotate(0)}10%{transform:rotate(-2deg)}42%{transform:rotate(-25deg)}54%{transform:rotate(-25deg)}88%{transform:rotate(-2deg)}100%{transform:rotate(0)} }
-  @keyframes lateralRaise { 0%{transform:translateY(0)}10%{transform:translateY(1px)}42%{transform:translateY(-15px)}54%{transform:translateY(-15px)}88%{transform:translateY(-1px)}100%{transform:translateY(0)} }
-  @keyframes flyesArms { 0%{transform:rotate(0)}10%{transform:rotate(2deg)}42%{transform:rotate(18deg)}54%{transform:rotate(18deg)}88%{transform:rotate(2deg)}100%{transform:rotate(0)} }
-  @keyframes rdlHinge { 0%{transform:rotate(0)}10%{transform:rotate(1deg)}45%{transform:rotate(18deg)}55%{transform:rotate(18deg)}88%{transform:rotate(2deg)}100%{transform:rotate(0)} }
-  @keyframes legcurlBend { 0%{transform:rotate(0)}10%{transform:rotate(-2deg)}42%{transform:rotate(-35deg)}54%{transform:rotate(-35deg)}88%{transform:rotate(-2deg)}100%{transform:rotate(0)} }
-  @keyframes calvesRaise { 0%{transform:translateY(0)}12%{transform:translateY(1px)}40%{transform:translateY(-10px)}55%{transform:translateY(-10px)}85%{transform:translateY(-1px)}100%{transform:translateY(0)} }
-  @keyframes facepullArms { 0%{transform:translateX(0)}10%{transform:translateX(1px)}42%{transform:translateX(-16px)}54%{transform:translateX(-16px)}88%{transform:translateX(-2px)}100%{transform:translateX(0)} }
-  @keyframes dipBody { 0%{transform:translateY(0)}10%{transform:translateY(2px)}45%{transform:translateY(18px)}55%{transform:translateY(18px)}88%{transform:translateY(2px)}100%{transform:translateY(0)} }
-  @keyframes hipThrustUp { 0%{transform:translateY(0)}10%{transform:translateY(1px)}42%{transform:translateY(-12px)}54%{transform:translateY(-12px)}88%{transform:translateY(-1px)}100%{transform:translateY(0)} }
-  @keyframes abwheelRoll { 0%{transform:translateX(0)}10%{transform:translateX(2px)}45%{transform:translateX(18px)}55%{transform:translateX(18px)}88%{transform:translateX(2px)}100%{transform:translateX(0)} }
-  @keyframes frontSquatDown { 0%{transform:translateY(0) scaleY(1)}10%{transform:translateY(2px)}40%{transform:translateY(25px) scaleY(.9)}52%{transform:translateY(25px) scaleY(.9)}85%{transform:translateY(3px)}100%{transform:translateY(0) scaleY(1)} }
-  @keyframes bulgarianSplitDown { 0%{transform:translateY(0)}10%{transform:translateY(2px)}42%{transform:translateY(22px)}54%{transform:translateY(22px)}88%{transform:translateY(2px)}100%{transform:translateY(0)} }
-  @keyframes farmerStep { 0%{transform:translateX(0) translateY(0)}25%{transform:translateX(5px) translateY(-4px)}50%{transform:translateX(10px) translateY(0)}75%{transform:translateX(5px) translateY(-4px)}100%{transform:translateX(0) translateY(0)} }
-  @keyframes genericMove { 0%{transform:translateY(0)}10%{transform:translateY(1px)}42%{transform:translateY(-10px)}54%{transform:translateY(-10px)}88%{transform:translateY(-1px)}100%{transform:translateY(0)} }
-
-  .anim-bench-arms { animation:benchArms 3.5s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center; }
-  .anim-squat { animation:squatDown 3.5s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center top; }
-  .anim-deadlift { animation:deadliftPull 3.8s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center bottom; }
-  .anim-ohp { animation:ohpArms 3.2s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center; }
-  .anim-row { animation:rowPull 3s cubic-bezier(.4,0,.2,1) infinite; transform-origin:right center; }
-  .anim-pullup { animation:pullupBody 3.5s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center top; }
-  .anim-legpress { animation:legpressLegs 3s cubic-bezier(.4,0,.2,1) infinite; transform-origin:left center; }
-  .anim-lunge { animation:lungeDown 3.5s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center top; }
-  .anim-curl { animation:curlArm 3s cubic-bezier(.4,0,.2,1) infinite; transform-origin:100px 140px; }
-  .anim-lateral { animation:lateralRaise 3s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center; }
-  .anim-flyes { animation:flyesArms 3.2s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center; }
-  .anim-rdl { animation:rdlHinge 3.8s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center bottom; }
-  .anim-legcurl { animation:legcurlBend 3s cubic-bezier(.4,0,.2,1) infinite; transform-origin:120px 80px; }
-  .anim-calves { animation:calvesRaise 2.5s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center bottom; }
-  .anim-facepull { animation:facepullArms 3s cubic-bezier(.4,0,.2,1) infinite; transform-origin:right center; }
-  .anim-dip { animation:dipBody 3.5s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center top; }
-  .anim-hipthrust { animation:hipThrustUp 3s cubic-bezier(.4,0,.2,1) infinite; transform-origin:left center; }
-  .anim-abwheel { animation:abwheelRoll 3.5s cubic-bezier(.4,0,.2,1) infinite; transform-origin:left center; }
-  .anim-frontsquat { animation:frontSquatDown 3.5s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center top; }
-  .anim-bulgariansplitsquat { animation:bulgarianSplitDown 3.5s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center top; }
-  .anim-farmerwalk { animation:farmerStep 2.5s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center; }
-  .anim-generic { animation:genericMove 3s cubic-bezier(.4,0,.2,1) infinite; transform-origin:center; }
+  /* Workout animations removed — using YouTube videos */
 
   /* SYS tab notice */
   .sys-notice { border:1px solid rgba(255,182,49,.3);background:rgba(255,182,49,.05);padding:12px;margin:12px 0;font-size:.72rem;color:var(--pip-amber);letter-spacing:1px; }
+
+  /* News filter bar */
+  .news-filter-bar { display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px;align-items:center; }
+  .news-filter-btn { background:rgba(24,255,109,.05);border:1px solid var(--pip-border);color:var(--pip-green-dim);font-family:'Share Tech Mono',monospace;font-size:.6rem;letter-spacing:2px;text-transform:uppercase;padding:6px 12px;cursor:pointer;transition:all .15s; }
+  .news-filter-btn:hover { background:rgba(24,255,109,.12);border-color:var(--pip-green); }
+  .news-filter-btn.active { background:rgba(24,255,109,.2);border-color:var(--pip-green);color:var(--pip-green);text-shadow:var(--pip-text-glow); }
+  .news-category-tag { font-size:.55rem;letter-spacing:2px;padding:2px 6px;border:1px solid;text-transform:uppercase; }
+  .news-source { font-size:.55rem;color:var(--pip-green-dark);letter-spacing:1px; }
+
+  /* Weather tab */
+  .wx-location-toggle { display:flex;gap:4px;flex-wrap:wrap;margin-bottom:16px;align-items:center; }
+  .wx-current { border:1px solid var(--pip-border);background:rgba(5,20,10,.5);padding:20px;margin-bottom:16px;text-align:center; }
+  .wx-temp-large { font-size:3rem;font-weight:bold;text-shadow:0 0 20px currentColor;letter-spacing:4px;margin-bottom:4px; }
+  .wx-condition { font-size:.85rem;color:var(--pip-green-dim);letter-spacing:2px;margin-bottom:16px; }
+  .wx-icon { font-family:'Share Tech Mono',monospace;margin-right:6px;letter-spacing:0; }
+  .wx-stat-row { display:flex;justify-content:center;gap:24px;flex-wrap:wrap; }
+  .wx-stat { text-align:center; }
+  .wx-stat-label { display:block;font-size:.55rem;letter-spacing:2px;color:var(--pip-green-dark);margin-bottom:2px; }
+  .wx-stat-val { font-size:.85rem;color:var(--pip-green);text-shadow:var(--pip-text-glow); }
+  .wx-forecast { border:1px solid var(--pip-border);background:rgba(5,20,10,.3);padding:12px;margin-bottom:16px; }
+  .wx-forecast-day { display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid rgba(24,255,109,.06);font-size:.75rem; }
+  .wx-forecast-day:last-child { border-bottom:none; }
+  .wx-day-name { width:36px;font-size:.65rem;letter-spacing:1px;color:var(--pip-green); }
+  .wx-icon-sm { width:36px;text-align:center;font-size:.65rem;color:var(--pip-green-dim); }
+  .wx-hi { width:36px;text-align:right;font-weight:bold; }
+  .wx-lo { width:36px;text-align:right; }
+  .wx-cond-sm { flex:1;font-size:.65rem;color:var(--pip-green-dim);letter-spacing:1px; }
+  .wx-precip-sm { width:40px;text-align:right;font-size:.65rem;color:#18d6ff; }
+  .wx-intel-card { display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--pip-border);background:rgba(10,30,15,.3);margin-bottom:6px;font-size:.75rem;color:var(--pip-green-dim); }
+  .wx-intel-card.warn { border-color:rgba(255,182,49,.3);color:var(--pip-amber); }
+  .wx-intel-card.alert { border-color:rgba(255,68,68,.3);color:#ff4444; }
+  .wx-intel-card.good { border-color:rgba(24,255,109,.3);color:var(--pip-green); }
+
+  /* Task outdoor */
+  .task-outdoor-badge { margin-left:6px;font-size:.7rem;color:#18d6ff; }
+  .task-rain-warning { font-size:.55rem;letter-spacing:1px;padding:2px 6px;background:rgba(255,182,49,.1);border:1px solid rgba(255,182,49,.3);color:var(--pip-amber);white-space:nowrap; }
 
   @media (max-width:600px) {
     .pipboy-device { padding:4px; }
@@ -680,6 +761,7 @@ const TABS = [
   { id: "calendar", label: "CAL", icon: "\u25C8" },
   { id: "finance", label: "FIN", icon: "$" },
   { id: "family", label: "FAM", icon: "\u2605" },
+  { id: "wx", label: "WX", icon: "\u2602" },
   { id: "news", label: "NEWS", icon: "\u25CE" },
   { id: "assist", label: "ASSIST", icon: "\u25A3" },
   { id: "sys", label: "SYS", icon: "\u2699" },
@@ -734,6 +816,7 @@ export default function CommandCenter() {
   const [newTaskCat, setNewTaskCat] = useState("project");
   const [newTaskPriority, setNewTaskPriority] = useState("med");
   const [newTaskDue, setNewTaskDue] = useState("");
+  const [newTaskOutdoor, setNewTaskOutdoor] = useState(false);
 
   // ─── Health / Weight / Macros / Strength ────────────────────
   const [weights, setWeights] = useState(() => loadStorage("cc_weights", []));
@@ -752,6 +835,11 @@ export default function CommandCenter() {
   const [newsArticles, setNewsArticles] = useState(() => loadStorage("cc_news", []));
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsError, setNewsError] = useState(null);
+  const [newsFilter, setNewsFilter] = useState("all");
+
+  // ─── Weather state ──────────────────────────────────────────
+  const [weatherData, setWeatherData] = useState(() => loadStorage("cc_weather", null));
+  const [weatherLocation, setWeatherLocation] = useState("olympia");
 
   // ─── TRT Injection Tracking ─────────────────────────────────
   const [trtLastDate, setTrtLastDate] = useState(() => loadStorage("cc_trt_last", "2026-02-22"));
@@ -793,6 +881,7 @@ export default function CommandCenter() {
   const [restTimer, setRestTimer] = useState(0);
   const [resting, setResting] = useState(false);
   const [workoutStartTime, setWorkoutStartTime] = useState(null);
+  const [showFormVideo, setShowFormVideo] = useState(false);
 
   // ─── Daily Reports ──────────────────────────────────────
   const [dailyReports, setDailyReports] = useState(() => loadStorage("cc_daily_reports", {}));
@@ -916,22 +1005,47 @@ export default function CommandCenter() {
     return () => clearTimeout(timerId);
   }, []);
 
-  // ─── News fetch ─────────────────────────────────────────────
+  // ─── News fetch (category-based) ────────────────────────────
   const fetchNews = useCallback(async () => {
     setNewsLoading(true);
     setNewsError(null);
     try {
-      // NewsAPI free tier blocks browser requests in production (CORS).
-      // Works in local dev only. Cached articles persist via localStorage.
-      const res = await fetch(`https://newsapi.org/v2/top-headlines?country=us&pageSize=10&apiKey=${API_KEYS.NEWS}`);
-      if (!res.ok) throw new Error(res.status === 426 || res.status === 403 ? "NewsAPI requires local dev or paid plan for browser requests" : `HTTP ${res.status}`);
-      const data = await res.json();
-      setNewsArticles(data.articles || []);
-      localStorage.setItem("cc_news", JSON.stringify(data.articles || []));
+      const allArticles = [];
+      for (const cat of NEWS_CATEGORIES) {
+        try {
+          const res = await fetch(`https://newsapi.org/v2/everything?q=${cat.query}&sortBy=publishedAt&pageSize=${cat.size}&apiKey=${API_KEYS.NEWS}`);
+          if (!res.ok) throw new Error(res.status === 426 || res.status === 403 ? "NewsAPI requires local dev or paid plan" : `HTTP ${res.status}`);
+          const data = await res.json();
+          (data.articles || []).forEach((a) => allArticles.push({ ...a, _category: cat.key }));
+        } catch (catErr) {
+          console.warn(`News fetch failed for ${cat.label}:`, catErr.message);
+        }
+      }
+      allArticles.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
+      setNewsArticles(allArticles);
+      localStorage.setItem("cc_news", JSON.stringify(allArticles));
     } catch (err) {
       setNewsError(err.message);
     } finally {
       setNewsLoading(false);
+    }
+  }, []);
+
+  // ─── Weather fetch (Open-Meteo, free, no key needed) ───────
+  const fetchWeather = useCallback(async () => {
+    try {
+      const results = {};
+      for (const loc of WEATHER_LOCATIONS) {
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lng}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code,precipitation&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=America/Los_Angeles&forecast_days=7`;
+        const resp = await fetch(url);
+        const data = await resp.json();
+        results[loc.key] = data;
+      }
+      results._fetchedAt = new Date().toISOString();
+      setWeatherData(results);
+      localStorage.setItem("cc_weather", JSON.stringify(results));
+    } catch (err) {
+      console.error("Weather fetch failed:", err);
     }
   }, []);
 
@@ -1019,8 +1133,10 @@ export default function CommandCenter() {
   }, []);
 
   // ─── Fetch on mount ─────────────────────────────────────────
-  useEffect(() => { fetchNews(); fetchOura(); }, [fetchNews, fetchOura]);
+  useEffect(() => { fetchNews(); fetchOura(); fetchWeather(); }, [fetchNews, fetchOura, fetchWeather]);
   useEffect(() => { if (activeTab === "news") fetchNews(); }, [activeTab, fetchNews]);
+  useEffect(() => { if (activeTab === "wx") fetchWeather(); }, [activeTab, fetchWeather]);
+  useEffect(() => { const id = setInterval(fetchWeather, 30 * 60 * 1000); return () => clearInterval(id); }, [fetchWeather]);
 
   // ─── Boot sequence ──────────────────────────────────────────
   useEffect(() => {
@@ -1081,9 +1197,10 @@ export default function CommandCenter() {
 
   const addTask = () => {
     if (!newTaskName.trim()) return;
-    setTasks((prev) => [...prev, { name: newTaskName.trim(), category: newTaskCat, done: false, dueDate: newTaskDue || null, priority: newTaskPriority }]);
+    setTasks((prev) => [...prev, { name: newTaskName.trim(), category: newTaskCat, done: false, dueDate: newTaskDue || null, priority: newTaskPriority, outdoor: newTaskOutdoor }]);
     setNewTaskName("");
     setNewTaskDue("");
+    setNewTaskOutdoor(false);
   };
 
   const deleteTask = (idx) => setTasks((prev) => prev.filter((_, i) => i !== idx));
@@ -1274,11 +1391,13 @@ export default function CommandCenter() {
     const greeting = hour < 12 ? "Good Morning" : hour < 17 ? "Afternoon" : "Evening";
     const ouraText = ouraData ? `Sleep score ${ouraData.sleepScore ?? "unknown"}. Readiness score ${ouraData.readinessScore ?? "unknown"}. Activity score ${ouraData.activityScore ?? "unknown"}. Steps: ${ouraData.steps?.toLocaleString() ?? "unknown"}. Active calories: ${ouraData.activeCalories ?? "unknown"}.` : "";
     const trtText = trtDaysUntil <= 2 ? `TRT injection ${trtDaysUntil === 0 ? "is due today" : trtDaysUntil < 0 ? "is overdue" : `due in ${trtDaysUntil} day${trtDaysUntil !== 1 ? "s" : ""}`}.` : "";
+    const wxBriefing = weatherData?.olympia?.current ? `Weather in Olympia: ${Math.round(weatherData.olympia.current.temperature_2m)} degrees, ${getWeatherCondition(weatherData.olympia.current.weather_code)}. Wind ${Math.round(weatherData.olympia.current.wind_speed_10m)} miles per hour.${getWeatherSuggestions(weatherData.olympia).map((s) => " " + s.text).join("")}` : "";
     const text = [
       `${greeting}, ${USER.name}.`,
       `Today is ${dateStr}.`,
       elizabethWeek ? "Elizabeth week is active." : ewDaysUntil != null && ewDaysUntil <= 3 ? `Elizabeth week starts in ${ewDaysUntil} day${ewDaysUntil !== 1 ? "s" : ""}.` : "Elizabeth week is inactive.",
       `Training today: ${isTrainingDay ? `Yes, ${dayName}` : "Rest day"}.`,
+      wxBriefing,
       `Glide path day ${glideDay} of 7. ${glideDay <= 3 ? "Build Phase" : glideDay <= 5 ? "Push Phase" : "Finish Strong"}.`,
       `Tasks: ${tasks.filter((t) => t.done).length} of ${tasks.length} complete.`,
       `Water intake: ${waterOz} of ${WATER_TARGET} ounces.`,
@@ -1352,6 +1471,7 @@ export default function CommandCenter() {
       setWorkoutWeightInput("");
       setResting(false);
       setRestTimer(0);
+      setShowFormVideo(false);
     }
   };
 
@@ -1555,12 +1675,13 @@ export default function CommandCenter() {
     const ex = todayExercises[workoutExerciseIdx];
     if (!ex) return null;
     const parsed = parseSets(ex.sets);
-    const animKey = getAnimationKey(ex.name);
-    const cueData = FORM_CUES[animKey] || FORM_CUES.generic;
+    const cueKey = getFormCueKey(ex.name);
+    const cueData = FORM_CUES[cueKey] || FORM_CUES.generic;
     const cues = cueData.cues || [];
     const muscles = cueData.muscles;
     const mistakes = cueData.mistakes;
-    const svgHtml = EXERCISE_SVGS[animKey] || EXERCISE_SVGS.generic;
+    const videoId = getExerciseVideoId(ex.name);
+    const searchUrl = `https://www.youtube.com/results?search_query=how+to+${encodeURIComponent(ex.name)}+proper+form`;
     const circumference = 2 * Math.PI * 85;
 
     return (
@@ -1590,8 +1711,29 @@ export default function CommandCenter() {
         <div className="workout-exercise-display">
           <div className="workout-exercise-name">{ex.name}</div>
           <div className="workout-set-info">{ex.sets} — Set {workoutCurrentSet + 1} of {parsed.numSets}</div>
-          <div className="workout-animation" dangerouslySetInnerHTML={{ __html: svgHtml }} />
+          {videoId ? (
+            <button className="workout-video-btn" onClick={() => setShowFormVideo((v) => !v)}>
+              <svg viewBox="0 0 24 24" style={{ width: 18, height: 18, fill: "#ff4444" }}><path d="M10 16.5l6-4.5-6-4.5v9zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>
+              {showFormVideo ? "HIDE FORM" : "WATCH FORM"}
+            </button>
+          ) : (
+            <a className="workout-video-btn" href={searchUrl} target="_blank" rel="noopener noreferrer">
+              <svg viewBox="0 0 24 24" style={{ width: 18, height: 18, fill: "#ff4444" }}><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+              SEARCH FORM
+            </a>
+          )}
         </div>
+
+        {showFormVideo && videoId && (
+          <div className="workout-video-embed">
+            <iframe
+              src={`https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`}
+              title={`${ex.name} form video`}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            />
+          </div>
+        )}
 
         <div className="workout-cues">
           <div style={{ fontSize: ".6rem", letterSpacing: 2, color: "var(--pip-amber)", marginBottom: 6 }}>FORM CUES</div>
@@ -1791,6 +1933,26 @@ export default function CommandCenter() {
               )}
             </div>
 
+            {weatherData?.olympia?.current && (
+              <div className="briefing-block">
+                <h3>Weather — Olympia</h3>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span style={{ fontSize: "1.4rem", color: getTempColor(weatherData.olympia.current.temperature_2m), textShadow: "var(--pip-text-glow)" }}>
+                    {Math.round(weatherData.olympia.current.temperature_2m)}{"\u00B0"}F
+                  </span>
+                  <span style={{ color: "var(--pip-green-dim)", fontSize: ".8rem" }}>
+                    {getWeatherIcon(weatherData.olympia.current.weather_code)} {getWeatherCondition(weatherData.olympia.current.weather_code)}
+                  </span>
+                </div>
+                <div className="briefing-line">Wind: {Math.round(weatherData.olympia.current.wind_speed_10m)} mph | Humidity: {weatherData.olympia.current.relative_humidity_2m}%</div>
+                {getWeatherSuggestions(weatherData.olympia).map((s, i) => (
+                  <div key={i} className="briefing-line" style={{ color: s.severity === "alert" ? "#ff4444" : s.severity === "warn" ? "var(--pip-amber)" : "var(--pip-green)" }}>
+                    {s.icon} {s.text}
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="briefing-block">
               <h3>7-Day Glide Path</h3>
               <div className="glide-day">
@@ -1898,13 +2060,21 @@ export default function CommandCenter() {
             {/* Task list */}
             {filteredTasks.map((t, i) => {
               const realIdx = tasks.indexOf(t);
+              const wxCode0 = weatherData?.olympia?.daily?.weather_code?.[0];
+              const rainToday = wxCode0 != null && wxCode0 >= 51 && wxCode0 <= 82;
               return (
                 <div key={i} className={`task-item ${t.done ? "completed" : ""} ${flashingTaskIdx === realIdx ? "task-flash" : ""}`}>
                   <div className="task-priority" style={{ background: PRIORITY_COLORS[t.priority] || PRIORITY_COLORS.med }} />
                   <div className={`task-checkbox ${t.done ? "checked" : ""}`} onClick={() => toggleTask(realIdx)}>
                     {t.done ? "\u2713" : ""}
                   </div>
-                  <span onClick={() => toggleTask(realIdx)} style={{ flex: 1, cursor: "pointer" }}>{t.name}</span>
+                  <span onClick={() => toggleTask(realIdx)} style={{ flex: 1, cursor: "pointer" }}>
+                    {t.name}
+                    {t.outdoor && <span className="task-outdoor-badge" title="Outdoor task">{"\u2602"}</span>}
+                  </span>
+                  {t.outdoor && !t.done && rainToday && (
+                    <span className="task-rain-warning">RN — RESCHEDULE?</span>
+                  )}
                   {t.dueDate && <span className="task-due">{t.dueDate}</span>}
                   <span className="task-category" style={{ borderColor: `${PRIORITY_COLORS[t.priority]}44` }}>{t.category}</span>
                   <button className="pip-btn small" onClick={() => deleteTask(realIdx)} style={{ padding: "2px 6px", fontSize: ".55rem" }}>X</button>
@@ -1928,6 +2098,10 @@ export default function CommandCenter() {
                   <option value="low">LOW</option>
                 </select>
                 <input type="date" className="pip-input" value={newTaskDue} onChange={(e) => setNewTaskDue(e.target.value)} style={{ maxWidth: 160 }} />
+                <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: ".65rem", color: "var(--pip-green-dim)", cursor: "pointer", whiteSpace: "nowrap" }}>
+                  <input type="checkbox" checked={newTaskOutdoor} onChange={(e) => setNewTaskOutdoor(e.target.checked)} style={{ accentColor: "var(--pip-green)" }} />
+                  {"\u2602"} OUT
+                </label>
                 <button className="pip-btn" onClick={addTask}>ADD</button>
               </div>
             </div>
@@ -2425,28 +2599,137 @@ export default function CommandCenter() {
         );
 
       // ════════════════════════════════════════════════════════
-      // NEWS TAB
+      // WX (WEATHER) TAB
       // ════════════════════════════════════════════════════════
-      case "news":
+      case "wx": {
+        const wxData = weatherData?.[weatherLocation];
+        const wxCurrent = wxData?.current;
+        const wxDaily = wxData?.daily;
+        const wxSuggestions = wxData ? getWeatherSuggestions(wxData) : [];
+        const wxDayNames = wxDaily?.time?.map((d) => {
+          const dt = new Date(d + "T12:00:00");
+          return dt.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
+        }) || [];
         return (
           <div>
-            <div className="section-title">// Live News Feed</div>
-            <div className="briefing-line" style={{ marginBottom: 12, color: "var(--pip-green-dim)" }}>Monitoring: {NEWS_SCOPE.join(" / ")}</div>
-            <button className="pip-btn" style={{ marginBottom: 16 }} onClick={fetchNews} disabled={newsLoading}>{newsLoading ? "FETCHING..." : "REFRESH"}</button>
-            {newsError && <div className="briefing-line" style={{ color: "var(--pip-amber)", marginBottom: 12 }}>FEED ERROR: {newsError}</div>}
-            {newsArticles.length === 0 && !newsLoading ? (
-              <div className="empty-state">NO ARTICLES AVAILABLE</div>
+            <div className="section-title">// Weather Intelligence</div>
+
+            {/* Location toggle */}
+            <div className="wx-location-toggle">
+              {WEATHER_LOCATIONS.map((loc) => (
+                <button key={loc.key} className={`news-filter-btn ${weatherLocation === loc.key ? "active" : ""}`}
+                  onClick={() => setWeatherLocation(loc.key)}>
+                  {loc.label}
+                </button>
+              ))}
+              <button className="pip-btn small" style={{ marginLeft: "auto" }} onClick={fetchWeather}>REFRESH</button>
+            </div>
+
+            {!wxCurrent ? (
+              <div className="empty-state">LOADING WEATHER DATA...</div>
             ) : (
-              newsArticles.map((article, i) => (
-                <div key={i} className="news-item">
-                  <div className="news-category">{article.source?.name || "UNKNOWN"}</div>
-                  <div className="news-headline"><a className="news-link" href={article.url} target="_blank" rel="noopener noreferrer">{article.title}</a></div>
-                  {article.publishedAt && <div className="news-time">{timeAgo(article.publishedAt)}</div>}
+              <>
+                {/* Current conditions */}
+                <div className="wx-current">
+                  <div className="wx-temp-large" style={{ color: getTempColor(wxCurrent.temperature_2m) }}>
+                    {Math.round(wxCurrent.temperature_2m)}{"\u00B0"}F
+                  </div>
+                  <div className="wx-condition">
+                    <span className="wx-icon">{getWeatherIcon(wxCurrent.weather_code)}</span>
+                    {getWeatherCondition(wxCurrent.weather_code)}
+                  </div>
+                  <div className="wx-stat-row">
+                    <div className="wx-stat"><span className="wx-stat-label">HUMIDITY</span><span className="wx-stat-val">{wxCurrent.relative_humidity_2m}%</span></div>
+                    <div className="wx-stat"><span className="wx-stat-label">WIND</span><span className="wx-stat-val">{Math.round(wxCurrent.wind_speed_10m)} mph</span></div>
+                    <div className="wx-stat"><span className="wx-stat-label">PRECIP</span><span className="wx-stat-val">{wxCurrent.precipitation}" </span></div>
+                  </div>
                 </div>
-              ))
+
+                {/* 7-day forecast */}
+                {wxDaily && (
+                  <div className="wx-forecast">
+                    <div style={{ fontSize: ".7rem", letterSpacing: 2, marginBottom: 8, color: "var(--pip-green-dim)" }}>7-DAY FORECAST</div>
+                    {wxDaily.time.map((d, i) => (
+                      <div key={d} className="wx-forecast-day">
+                        <span className="wx-day-name">{wxDayNames[i]}</span>
+                        <span className="wx-icon-sm">{getWeatherIcon(wxDaily.weather_code[i])}</span>
+                        <span className="wx-hi" style={{ color: getTempColor(wxDaily.temperature_2m_max[i]) }}>{Math.round(wxDaily.temperature_2m_max[i])}{"\u00B0"}</span>
+                        <span className="wx-lo" style={{ color: "var(--pip-green-dark)" }}>{Math.round(wxDaily.temperature_2m_min[i])}{"\u00B0"}</span>
+                        <span className="wx-cond-sm">{getWeatherCondition(wxDaily.weather_code[i])}</span>
+                        <span className="wx-precip-sm">{wxDaily.precipitation_sum[i]}"</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Weather intel suggestions */}
+                {wxSuggestions.length > 0 && (
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ fontSize: ".7rem", letterSpacing: 2, marginBottom: 8, color: "var(--pip-green-dim)" }}>WEATHER INTEL</div>
+                    {wxSuggestions.map((s, i) => (
+                      <div key={i} className={`wx-intel-card ${s.severity}`}>
+                        <span className="wx-icon">{s.icon}</span>
+                        <span style={{ flex: 1 }}>{s.text}</span>
+                        <button className="pip-btn small" onClick={() => {
+                          setTasks((prev) => [...prev, { name: s.text, category: "daily", done: false, dueDate: localDate, priority: s.severity === "alert" ? "high" : "med", outdoor: true }]);
+                          setActiveTab("tasks");
+                        }}>+ TASK</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {weatherData?._fetchedAt && (
+                  <div style={{ marginTop: 12, fontSize: ".6rem", color: "var(--pip-green-dark)", letterSpacing: 1, textAlign: "center" }}>
+                    LAST UPDATE: {timeAgo(weatherData._fetchedAt)}
+                  </div>
+                )}
+              </>
             )}
           </div>
         );
+      }
+
+      // ════════════════════════════════════════════════════════
+      // NEWS TAB
+      // ════════════════════════════════════════════════════════
+      case "news": {
+        const filteredNews = newsFilter === "all" ? newsArticles : newsArticles.filter((a) => a._category === newsFilter);
+        return (
+          <div>
+            <div className="section-title">// Intel Feed</div>
+            <div className="news-filter-bar">
+              {[{ key: "all", label: "ALL" }, ...NEWS_CATEGORIES].map((cat) => (
+                <button key={cat.key} className={`news-filter-btn ${newsFilter === cat.key ? "active" : ""}`}
+                  style={newsFilter === cat.key && cat.key !== "all" ? { borderColor: NEWS_CAT_COLORS[cat.key], color: NEWS_CAT_COLORS[cat.key] } : {}}
+                  onClick={() => setNewsFilter(cat.key)}>
+                  {cat.label}
+                </button>
+              ))}
+              <button className="pip-btn small" style={{ marginLeft: "auto" }} onClick={fetchNews} disabled={newsLoading}>{newsLoading ? "..." : "REFRESH"}</button>
+            </div>
+            {newsError && <div className="briefing-line" style={{ color: "var(--pip-amber)", marginBottom: 12 }}>FEED ERROR: {newsError}</div>}
+            {filteredNews.length === 0 && !newsLoading ? (
+              <div className="empty-state">NO ARTICLES AVAILABLE</div>
+            ) : (
+              filteredNews.map((article, i) => {
+                const catInfo = NEWS_CATEGORIES.find((c) => c.key === article._category);
+                const catColor = NEWS_CAT_COLORS[article._category] || "var(--pip-green-dim)";
+                return (
+                  <div key={i} className="news-item">
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <span className="news-category-tag" style={{ color: catColor, borderColor: catColor }}>{catInfo?.label || "NEWS"}</span>
+                      <span className="news-source">{article.source?.name || ""}</span>
+                    </div>
+                    <div className="news-headline"><a className="news-link" href={article.url} target="_blank" rel="noopener noreferrer">{article.title}</a></div>
+                    {article.publishedAt && <div className="news-time">{timeAgo(article.publishedAt)}</div>}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        );
+      }
 
       // ════════════════════════════════════════════════════════
       // AI ASSIST TAB
@@ -2638,6 +2921,7 @@ export default function CommandCenter() {
                   <span>TASKS: {completedCount}/{totalTasks}</span>
                   <span style={{ color: allMedsTaken ? "var(--pip-green)" : medsTakenCount > 0 ? "var(--pip-amber)" : undefined }}>MEDS: {allMedsTaken ? "\u2713" : `${medsTakenCount}/${medsTotal}`}</span>
                   <span>OURA: {ouraData?.readinessScore ?? "--"}</span>
+                  <span>WX: {weatherData?.olympia?.current ? `${Math.round(weatherData.olympia.current.temperature_2m)}\u00B0F` : "--"}</span>
                   <span>BAL: ${totalBalance.toFixed(0)}</span>
                   <span>{new Date().toLocaleTimeString()}</span>
                 </div>
