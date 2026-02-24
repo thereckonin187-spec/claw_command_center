@@ -41,6 +41,7 @@ const DEFAULT_MEDS = [
   { id: 7, name: "Iron 65mg (Ferrous Sulfate)", category: "supplement", dosage: "1 tablet", frequency: "daily", timeOfDay: "morning", notes: "Take on empty stomach. Vitamin C boosts absorption. AVOID taking with calcium, dairy, coffee, or tea. Space 2 hours from multivitamin." },
   { id: 8, name: "Jacked Factory N.O. XT", category: "pre-workout", dosage: "3 capsules", frequency: "training days only", timeOfDay: "pre-workout", notes: "Nitric oxide booster. Take 30 min before training. Contains L-Arginine Silicate and Pycnogenol." },
   { id: 9, name: "Sertraline (Zoloft)", category: "prescription", dosage: "as prescribed", frequency: "daily", timeOfDay: "morning", notes: "SSRI antidepressant. Take at same time every day. Do not skip. Do not stop abruptly without doctor guidance." },
+  { id: 10, name: "TRT Injection (Testosterone)", category: "prescription", dosage: "as prescribed", frequency: "every 6 days", timeOfDay: "any", notes: "Injection cycle." },
 ];
 
 const API_KEYS = {
@@ -63,9 +64,14 @@ const isTrainingDay = TRAINING_DAYS.includes(dayName);
 const localDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
 function detectElizabethWeek() {
-  const anchor = new Date(2025, 1, 23, 18, 0);
-  const diff = Math.floor((today - anchor) / (1000 * 60 * 60 * 24));
-  return Math.floor(diff / 7) % 2 === 0;
+  // Anchor: Sunday March 1, 2026 6PM — known start of Elizabeth Week
+  // Cycle: 14 days (7 days on, 7 days off)
+  const anchor = new Date(2026, 2, 1, 18, 0);
+  const diffDays = (today - anchor) / (1000 * 60 * 60 * 24);
+  const cycleDay = ((diffDays % 14) + 14) % 14;
+  const active = cycleDay < 7;
+  const daysUntilNext = active ? null : Math.ceil(14 - cycleDay);
+  return { active, daysUntilNext };
 }
 
 function checkBirthdays() {
@@ -235,7 +241,7 @@ function autoResetTasks(tasks) {
   return updated;
 }
 
-const elizabethWeek = detectElizabethWeek();
+const { active: elizabethWeek, daysUntilNext: ewDaysUntil } = detectElizabethWeek();
 const birthdays = checkBirthdays();
 
 const DEFAULT_TASKS = [
@@ -671,6 +677,9 @@ export default function ClawCommandCenter() {
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsError, setNewsError] = useState(null);
 
+  // ─── TRT Injection Tracking ─────────────────────────────────
+  const [trtLastDate, setTrtLastDate] = useState(() => loadStorage("ccc_trt_last", "2026-02-22"));
+
   // ─── Oura ───────────────────────────────────────────────────
   const [ouraData, setOuraData] = useState(() => loadStorage("ccc_oura", null));
   const [ouraLoading, setOuraLoading] = useState(false);
@@ -772,6 +781,7 @@ export default function ClawCommandCenter() {
   useEffect(() => { localStorage.setItem("ccc_daily_reports", JSON.stringify(dailyReports)); }, [dailyReports]);
   useEffect(() => { localStorage.setItem("ccc_daily_activity", JSON.stringify(dailyActivityLog)); }, [dailyActivityLog]);
   useEffect(() => { localStorage.setItem("ccc_meds", JSON.stringify(meds)); }, [meds]);
+  useEffect(() => { localStorage.setItem("ccc_trt_last", JSON.stringify(trtLastDate)); }, [trtLastDate]);
   useEffect(() => {
     const stored = loadStorage("ccc_meds_taken", {});
     stored[localDate] = medsTakenToday;
@@ -1072,6 +1082,17 @@ export default function ClawCommandCenter() {
   const deleteMed = (id) => setMeds((prev) => prev.filter((m) => m.id !== id));
   const toggleMedTaken = (id) => setMedsTakenToday((prev) => ({ ...prev, [id]: !prev[id] }));
 
+  // ─── TRT Injection Logic ────────────────────────────────────
+  const trtNextD = new Date(trtLastDate + "T12:00:00");
+  trtNextD.setDate(trtNextD.getDate() + 6);
+  const trtNextDate = `${trtNextD.getFullYear()}-${String(trtNextD.getMonth() + 1).padStart(2, "0")}-${String(trtNextD.getDate()).padStart(2, "0")}`;
+  const trtNextLabel = trtNextD.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const trtLastLabel = new Date(trtLastDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const trtDaysUntil = Math.round((trtNextD - new Date(localDate + "T12:00:00")) / (1000 * 60 * 60 * 24));
+  const trtColor = trtDaysUntil >= 3 ? "var(--pip-green)" : trtDaysUntil >= 1 ? "var(--pip-amber)" : "#ff4444";
+  const trtStatusText = trtDaysUntil > 0 ? `${trtDaysUntil} DAY${trtDaysUntil !== 1 ? "S" : ""}` : trtDaysUntil === 0 ? "TODAY" : `OVERDUE ${Math.abs(trtDaysUntil)}d`;
+  const markTrtTaken = () => setTrtLastDate(localDate);
+
   const analyzeMeds = async () => {
     if (meds.length === 0) return;
     setMedAnalysisLoading(true);
@@ -1170,15 +1191,16 @@ export default function ClawCommandCenter() {
   const speakBriefing = async () => {
     const greeting = hour < 12 ? "Good Morning" : hour < 17 ? "Afternoon" : "Evening";
     const ouraText = ouraData ? `Sleep score ${ouraData.sleepScore ?? "unknown"}. Readiness score ${ouraData.readinessScore ?? "unknown"}. Activity score ${ouraData.activityScore ?? "unknown"}. Steps: ${ouraData.steps?.toLocaleString() ?? "unknown"}. Active calories: ${ouraData.activeCalories ?? "unknown"}.` : "";
+    const trtText = trtDaysUntil <= 2 ? `TRT injection ${trtDaysUntil === 0 ? "is due today" : trtDaysUntil < 0 ? "is overdue" : `due in ${trtDaysUntil} day${trtDaysUntil !== 1 ? "s" : ""}`}.` : "";
     const text = [
       `${greeting}, ${USER.name}.`,
       `Today is ${dateStr}.`,
-      `Elizabeth week is ${elizabethWeek ? "active" : "inactive"}.`,
+      elizabethWeek ? "Elizabeth week is active." : ewDaysUntil != null && ewDaysUntil <= 3 ? `Elizabeth week starts in ${ewDaysUntil} day${ewDaysUntil !== 1 ? "s" : ""}.` : "Elizabeth week is inactive.",
       `Training today: ${isTrainingDay ? `Yes, ${dayName}` : "Rest day"}.`,
       `Glide path day ${glideDay} of 7. ${glideDay <= 3 ? "Build Phase" : glideDay <= 5 ? "Push Phase" : "Finish Strong"}.`,
       `Tasks: ${tasks.filter((t) => t.done).length} of ${tasks.length} complete.`,
       `Water intake: ${waterOz} of ${WATER_TARGET} ounces.`,
-      ouraText, ...birthdays,
+      ouraText, trtText, ...birthdays,
     ].join(" ");
     setSpeaking(true);
     try {
@@ -1606,7 +1628,13 @@ export default function ClawCommandCenter() {
               <h3>{hour < 12 ? "Good Morning" : hour < 17 ? "Afternoon" : "Evening"}, {USER.name}</h3>
               <div className="briefing-line"><strong>Date:</strong> {dateStr}</div>
               <div className="briefing-line"><strong>Role:</strong> {USER.role}</div>
-              <div className="briefing-line"><strong>Elizabeth Week:</strong>{" "}<span className={`stat-value ${elizabethWeek ? "active" : "inactive"}`}>{elizabethWeek ? "ACTIVE" : "INACTIVE"}</span></div>
+              {elizabethWeek ? (
+                <div style={{ background: "rgba(24,255,109,.08)", border: "1px solid var(--pip-green)", padding: "8px 12px", margin: "8px 0", textAlign: "center", textShadow: "var(--pip-text-glow)", letterSpacing: 2, fontSize: ".8rem", color: "var(--pip-green)" }}>
+                  ELIZABETH WEEK — ACTIVE
+                </div>
+              ) : (
+                <div className="briefing-line"><strong>Elizabeth Week:</strong>{" "}<span className="stat-value inactive">INACTIVE</span></div>
+              )}
               <div className="briefing-line"><strong>Training Today:</strong>{" "}<span className={`stat-value ${isTrainingDay ? "active" : "inactive"}`}>{isTrainingDay ? "YES \u2014 " + dayName.toUpperCase() : "REST DAY"}</span></div>
             </div>
 
@@ -1669,9 +1697,19 @@ export default function ClawCommandCenter() {
               </div>
             )}
 
-            {birthdays.length > 0 && (
+            {(birthdays.length > 0 || trtDaysUntil <= 2 || (ewDaysUntil != null && ewDaysUntil <= 3)) && (
               <div className="briefing-block">
                 <h3>Alerts</h3>
+                {ewDaysUntil != null && ewDaysUntil <= 3 && (
+                  <div className="briefing-line" style={{ color: "var(--pip-amber)", fontWeight: "bold" }}>
+                    ELIZABETH WEEK STARTS IN {ewDaysUntil} DAY{ewDaysUntil !== 1 ? "S" : ""}
+                  </div>
+                )}
+                {trtDaysUntil <= 2 && (
+                  <div className="briefing-line" style={{ color: trtColor, fontWeight: "bold" }}>
+                    TRT INJECTION: {trtStatusText} — due {trtNextLabel}
+                  </div>
+                )}
                 {birthdays.map((b, i) => <div key={i} className="briefing-line" style={{ color: "var(--pip-amber)" }}>{b}</div>)}
               </div>
             )}
@@ -1938,8 +1976,9 @@ export default function ClawCommandCenter() {
       // MEDS TAB
       // ════════════════════════════════════════════════════════
       case "meds": {
-        const medsTakenCount = meds.filter((m) => medsTakenToday[m.id]).length;
-        const medsTotal = meds.length;
+        const dailyMeds = meds.filter((m) => m.id !== 10);
+        const medsTakenCount = dailyMeds.filter((m) => medsTakenToday[m.id]).length;
+        const medsTotal = dailyMeds.length;
         const medsPct = medsTotal > 0 ? Math.round((medsTakenCount / medsTotal) * 100) : 0;
 
         // 7-day wellness trend
@@ -1955,6 +1994,20 @@ export default function ClawCommandCenter() {
         return (
           <div>
             <div className="section-title">// Vitamins & Medications</div>
+
+            {/* TRT Injection Card */}
+            <div className="briefing-block" style={{ border: `1px solid ${trtColor}44`, padding: 16, marginBottom: 16, textAlign: "center" }}>
+              <div style={{ fontSize: ".7rem", letterSpacing: 3, color: "var(--pip-green-dim)", marginBottom: 8 }}>TRT INJECTION</div>
+              <div style={{ fontSize: "2.2rem", fontWeight: "bold", color: trtColor, textShadow: `0 0 12px ${trtColor}88` }}>
+                {trtStatusText}
+              </div>
+              <div style={{ fontSize: ".65rem", color: "var(--pip-green-dim)", marginTop: 8 }}>
+                LAST SHOT: {trtLastLabel} &nbsp;|&nbsp; NEXT DUE: {trtNextLabel}
+              </div>
+              <button className="pip-btn" style={{ marginTop: 12, padding: "8px 24px" }} onClick={markTrtTaken}>
+                MARK TAKEN
+              </button>
+            </div>
 
             {/* Type legend */}
             <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
@@ -1972,10 +2025,10 @@ export default function ClawCommandCenter() {
               <div className="health-bar-track"><div className="health-bar-fill" style={{ width: `${medsPct}%` }} /></div>
             </div>
 
-            {/* Med list */}
-            {meds.length === 0 ? (
+            {/* Med list (excludes TRT — shown in its own card above) */}
+            {dailyMeds.length === 0 ? (
               <div className="empty-state">NO MEDICATIONS ADDED \u2014 ADD BELOW</div>
-            ) : meds.map((m) => {
+            ) : dailyMeds.map((m) => {
               const typeColor = MED_TYPE_COLORS[m.category] || "var(--pip-green)";
               return (
                 <div key={m.id} className={`task-item ${medsTakenToday[m.id] ? "completed" : ""}`} style={{ borderLeftColor: typeColor, borderLeftWidth: 3 }}>
