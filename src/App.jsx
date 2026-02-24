@@ -54,6 +54,7 @@ const API_KEYS = {
 const AI_SYSTEM_PROMPT = "You are the Claw Command Center AI assistant. You speak with military-grade clarity like a Fallout Mr. Handy robot butler. You help Claw manage tasks, schedule, health, and daily operations. Keep responses concise and actionable. Address the user as Claw.";
 const PROXY_URL = "http://localhost:5111";
 const PROXY_FALLBACK = "http://localhost:5112";
+const IS_LOCAL = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
 
 // ─── HELPERS ──────────────────────────────────────────────────
 const today = new Date();
@@ -845,8 +846,10 @@ export default function ClawCommandCenter() {
     setNewsLoading(true);
     setNewsError(null);
     try {
+      // NewsAPI free tier blocks browser requests in production (CORS).
+      // Works in local dev only. Cached articles persist via localStorage.
       const res = await fetch(`https://newsapi.org/v2/top-headlines?country=us&pageSize=10&apiKey=${API_KEYS.NEWS}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(res.status === 426 || res.status === 403 ? "NewsAPI requires local dev or paid plan for browser requests" : `HTTP ${res.status}`);
       const data = await res.json();
       setNewsArticles(data.articles || []);
       localStorage.setItem("ccc_news", JSON.stringify(data.articles || []));
@@ -858,7 +861,10 @@ export default function ClawCommandCenter() {
   }, []);
 
   // ─── Oura fetch (via proxy — all 4 endpoints) ──────────────
+  const [proxyAvailable, setProxyAvailable] = useState(IS_LOCAL);
+
   const fetchOura = useCallback(async () => {
+    if (!IS_LOCAL) { setOuraLoading(false); return; }
     setOuraLoading(true);
     try {
       // Always fetch a 5-day range to catch the most recent data
@@ -931,6 +937,7 @@ export default function ClawCommandCenter() {
       localStorage.setItem("ccc_oura", JSON.stringify(result));
     } catch (err) {
       console.error("Oura fetch failed:", err);
+      setProxyAvailable(false);
     } finally {
       setOuraLoading(false);
     }
@@ -1924,7 +1931,7 @@ export default function ClawCommandCenter() {
                   <button className="pip-btn" style={{ marginTop: 8 }} onClick={fetchOura} disabled={ouraLoading}>{ouraLoading ? "SYNCING..." : "REFRESH OURA"}</button>
                 </>
               ) : (
-                <div className="empty-state">NO OURA DATA \u2014 START PROXY SERVER TO SYNC</div>
+                <div className="empty-state">{IS_LOCAL ? "NO OURA DATA \u2014 START PROXY SERVER TO SYNC" : "CONNECT LOCAL SERVER FOR OURA DATA"}</div>
               )}
             </div>
 

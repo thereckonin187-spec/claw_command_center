@@ -1,13 +1,14 @@
 {
   "name": "Claw Command Center",
   "short_name": "CLAW",
-  "description": "Personal Operating System — Pip-Boy Edition",
+  "description": "Personal Operating System",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0f0a",
   "theme_color": "#18ff6d",
+  "orientation": "portrait-primary",
   "icons": [
-    { "src": "/app_pic.jpg", "sizes": "192x192", "type": "image/jpeg" },
-    { "src": "/app_pic.jpg", "sizes": "512x512", "type": "image/jpeg" }
+    { "src": "/icon-192.jpg", "sizes": "192x192", "type": "image/jpeg" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
   ]
 }
