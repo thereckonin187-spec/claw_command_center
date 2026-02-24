@@ -58,12 +58,9 @@ root.render(
   )
 );
 
-// Force clear old service workers on load, then register fresh
+// Unregister all service workers — previous versions caused stale cache issues
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then((registrations) => {
-    registrations.forEach((reg) => reg.update());
-  });
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    registrations.forEach((reg) => reg.unregister());
   });
 }
