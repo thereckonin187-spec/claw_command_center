@@ -795,6 +795,17 @@ export default function ClawCommandCenter() {
     localStorage.setItem("ccc_water", JSON.stringify(stored));
   }, [waterOz]);
 
+  // ─── Sync "Take Vitamins" task with meds completion ────────
+  useEffect(() => {
+    const vitIdx = tasks.findIndex((t) => t.name === "Take Vitamins");
+    if (vitIdx === -1) return;
+    if (allMedsTaken && !tasks[vitIdx].done) {
+      setTasks((prev) => prev.map((t, i) => i === vitIdx ? { ...t, done: true, completedAt: new Date().toISOString() } : t));
+    } else if (!allMedsTaken && tasks[vitIdx].done) {
+      setTasks((prev) => prev.map((t, i) => i === vitIdx ? { ...t, done: false, completedAt: null } : t));
+    }
+  }, [allMedsTaken]);
+
   // ─── Show wellness check once per day ─────────────────────
   useEffect(() => {
     if (!wellnessLog[localDate] && meds.length > 0) {
@@ -1317,6 +1328,7 @@ export default function ClawCommandCenter() {
       calendar: { events: todayEvents },
       finance: { transactions: todayTxns, balance: totalBalance },
       family: { elizabethWeek },
+      meds: { taken: medsTakenCount, total: medsTotal, complete: allMedsTaken },
       activityLog: activityToday,
     };
 
@@ -1361,6 +1373,13 @@ export default function ClawCommandCenter() {
   const completedCount = tasks.filter((t) => t.done).length;
   const totalTasks = tasks.length;
   const completionPct = totalTasks > 0 ? Math.round((completedCount / totalTasks) * 100) : 0;
+
+  // Meds completion (excludes TRT)
+  const dailyMeds = meds.filter((m) => m.id !== 10);
+  const medsTakenCount = dailyMeds.filter((m) => medsTakenToday[m.id]).length;
+  const medsTotal = dailyMeds.length;
+  const allMedsTaken = medsTotal > 0 && medsTakenCount === medsTotal;
+  const medsCompletedAt = allMedsTaken ? new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : null;
 
   function scoreClass(score) { if (score == null) return ""; return score >= 70 ? "good" : score >= 50 ? "warn" : "low"; }
 
@@ -1418,9 +1437,10 @@ export default function ClawCommandCenter() {
     if (ouraData?.activityScore) items.push(`ACTIVITY: ${ouraData.activityScore}/100`);
     items.push(`EW: ${elizabethWeek ? "ACTIVE" : "OFF"}`);
     items.push(`TASKS: ${completedCount}/${totalTasks}`);
+    items.push(allMedsTaken ? "MEDS: COMPLETE" : `MEDS: ${medsTakenCount}/${medsTotal}`);
     if (items.length === 0) items.push("ALL SYSTEMS NOMINAL");
     return items;
-  }, [tasks, upcomingEvents, weights, ouraData, completedCount, totalTasks]);
+  }, [tasks, upcomingEvents, weights, ouraData, completedCount, totalTasks, allMedsTaken, medsTakenCount, medsTotal]);
 
   // ─── BOOT SCREEN ─────────────────────────────────────────
   if (!booted) {
@@ -1675,6 +1695,14 @@ export default function ClawCommandCenter() {
               <div className="health-bar-container">
                 <div className="health-bar-label"><span>TASKS COMPLETE</span><span>{completedCount}/{totalTasks} ({completionPct}%)</span></div>
                 <div className="health-bar-track"><div className="health-bar-fill" style={{ width: `${completionPct}%` }} /></div>
+              </div>
+              <div className="briefing-line" style={{ marginTop: 8 }}>
+                <strong>Vitamins:</strong>{" "}
+                {allMedsTaken ? (
+                  <span style={{ color: "var(--pip-green)", fontWeight: "bold" }}>{"\u2713"} COMPLETE</span>
+                ) : (
+                  <span style={{ color: "var(--pip-amber)" }}>{medsTakenCount}/{medsTotal} TAKEN</span>
+                )}
               </div>
             </div>
 
@@ -1976,9 +2004,6 @@ export default function ClawCommandCenter() {
       // MEDS TAB
       // ════════════════════════════════════════════════════════
       case "meds": {
-        const dailyMeds = meds.filter((m) => m.id !== 10);
-        const medsTakenCount = dailyMeds.filter((m) => medsTakenToday[m.id]).length;
-        const medsTotal = dailyMeds.length;
         const medsPct = medsTotal > 0 ? Math.round((medsTakenCount / medsTotal) * 100) : 0;
 
         // 7-day wellness trend
@@ -1994,6 +2019,12 @@ export default function ClawCommandCenter() {
         return (
           <div>
             <div className="section-title">// Vitamins & Medications</div>
+
+            {allMedsTaken && (
+              <div style={{ background: "rgba(24,255,109,.08)", border: "1px solid var(--pip-green)", padding: "10px 16px", marginBottom: 16, textAlign: "center", textShadow: "var(--pip-text-glow)", letterSpacing: 2, fontSize: ".8rem", color: "var(--pip-green)" }}>
+                {"\u2713"} ALL MEDS TAKEN — {medsCompletedAt}
+              </div>
+            )}
 
             {/* TRT Injection Card */}
             <div className="briefing-block" style={{ border: `1px solid ${trtColor}44`, padding: 16, marginBottom: 16, textAlign: "center" }}>
@@ -2493,6 +2524,7 @@ export default function ClawCommandCenter() {
                   <span>SYS: NOMINAL</span>
                   <span>EW: {elizabethWeek ? "ON" : "OFF"}</span>
                   <span>TASKS: {completedCount}/{totalTasks}</span>
+                  <span style={{ color: allMedsTaken ? "var(--pip-green)" : medsTakenCount > 0 ? "var(--pip-amber)" : undefined }}>MEDS: {allMedsTaken ? "\u2713" : `${medsTakenCount}/${medsTotal}`}</span>
                   <span>OURA: {ouraData?.readinessScore ?? "--"}</span>
                   <span>BAL: ${totalBalance.toFixed(0)}</span>
                   <span>{new Date().toLocaleTimeString()}</span>
