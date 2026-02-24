@@ -53,13 +53,53 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+// Spotify OAuth callback handler
+function SpotifyCallback() {
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    const verifier = localStorage.getItem('spotify_code_verifier');
+    if (code && verifier) {
+      const clientId = '1419a48fc3514d2da2c9c0b9315828bc';
+      const redirectUri = window.location.origin + '/callback';
+      fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: clientId,
+          grant_type: 'authorization_code',
+          code: code,
+          redirect_uri: redirectUri,
+          code_verifier: verifier,
+        }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.access_token) {
+            localStorage.setItem('spotify_access_token', data.access_token);
+            localStorage.setItem('spotify_refresh_token', data.refresh_token || '');
+            localStorage.setItem('spotify_token_expiry', String(Date.now() + data.expires_in * 1000));
+          }
+          window.location.href = '/';
+        })
+        .catch(() => { window.location.href = '/'; });
+    } else {
+      window.location.href = '/';
+    }
+  }, []);
+  return React.createElement('div', {
+    style: { background: '#0a0f0a', color: '#18ff6d', padding: 40, fontFamily: 'monospace', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }
+  }, React.createElement('div', null, 'Authenticating with Spotify...'));
+}
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   React.createElement(ErrorBoundary, null,
     React.createElement(BrowserRouter, null,
       React.createElement(Routes, null,
         React.createElement(Route, { path: '/', element: React.createElement(App) }),
-        React.createElement(Route, { path: '/elizabeth', element: React.createElement(ElizabethApp) })
+        React.createElement(Route, { path: '/elizabeth', element: React.createElement(ElizabethApp) }),
+        React.createElement(Route, { path: '/callback', element: React.createElement(SpotifyCallback) })
       )
     )
   )

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import SpotifyPlayer from "react-spotify-web-playback";
 
 // ─── DATA LAYER ───────────────────────────────────────────────
 const USER = { name: "Courier 6", role: "Hospital Construction" };
@@ -93,6 +94,25 @@ const MED_CATEGORIES = ["vitamin", "supplement", "prescription", "pre-workout"];
 const MED_FREQUENCIES = ["daily", "2x daily", "weekly", "training days"];
 const MED_TIMES = ["morning", "evening", "both", "pre-workout"];
 const WATER_TARGET = 128; // oz per day
+
+// ─── FALLOUT PERKS DEFINITIONS ─────────────────────────────
+const PERKS_DEF = [
+  { id: "iron_fist", name: "Iron Fist", cat: "STRENGTH", desc: "Log 50 strength entries", icon: "\u270A", target: 50, check: (s) => s.strengthLog?.length || 0 },
+  { id: "pack_rat", name: "Pack Rat", cat: "STRENGTH", desc: "Log 100 strength entries", icon: "\uD83D\uDCAA", target: 100, check: (s) => s.strengthLog?.length || 0 },
+  { id: "marathon", name: "Marathoner", cat: "ENDURANCE", desc: "Track 10 GPS activities", icon: "\uD83C\uDFC3", target: 10, check: (s) => s.activities?.length || 0 },
+  { id: "hydration", name: "Aqua Boy", cat: "ENDURANCE", desc: "Hit water target 30 days", icon: "\uD83D\uDCA7", target: 30, check: (s) => s.waterDays || 0 },
+  { id: "bookworm", name: "Bookworm", cat: "INTELLIGENCE", desc: "Complete 100 tasks", icon: "\uD83D\uDCDA", target: 100, check: (s) => s.tasksCompleted || 0 },
+  { id: "scientist", name: "Science!", cat: "INTELLIGENCE", desc: "Generate 10 AI coaching reports", icon: "\uD83E\uDDEA", target: 10, check: (s) => s.coachingReports || 0 },
+  { id: "journal_keeper", name: "Scribe", cat: "INTELLIGENCE", desc: "Generate 30 journal entries", icon: "\uD83D\uDCD3", target: 30, check: (s) => s.journal?.length || 0 },
+  { id: "family_man", name: "Family Man", cat: "CHARISMA", desc: "Schedule 20 Elizabeth video calls", icon: "\uD83D\uDC68\u200D\uD83D\uDC67", target: 20, check: (s) => s.videoCalls?.length || 0 },
+  { id: "smooth_talker", name: "Smooth Talker", cat: "CHARISMA", desc: "Send 50 AI chat messages", icon: "\uD83D\uDDE3\uFE0F", target: 50, check: (s) => s.chatMessages || 0 },
+  { id: "lucky_streak", name: "Lucky Streak", cat: "LUCK", desc: "Maintain any 30-day habit streak", icon: "\uD83C\uDF40", target: 30, check: (s) => s.maxStreak || 0 },
+  { id: "high_roller", name: "High Roller", cat: "LUCK", desc: "Stay under budget for 3 months", icon: "\uD83C\uDFB0", target: 3, check: (s) => s.underBudgetMonths || 0 },
+  { id: "night_owl", name: "Night Person", cat: "PERCEPTION", desc: "Log 50 wellness checks", icon: "\uD83E\uDD89", target: 50, check: (s) => s.wellnessChecks || 0 },
+  { id: "weather_eye", name: "Weather Eye", cat: "PERCEPTION", desc: "Check weather 100 times", icon: "\u26C5", target: 100, check: (s) => s.weatherChecks || 0 },
+  { id: "pill_popper", name: "Chem Resistant", cat: "ENDURANCE", desc: "Take all meds for 60 days", icon: "\uD83D\uDC8A", target: 60, check: (s) => s.allMedsDays || 0 },
+  { id: "investor", name: "Cap Collector", cat: "LUCK", desc: "Track 5 investments", icon: "\uD83D\uDCB0", target: 5, check: (s) => s.portfolio?.length || 0 },
+];
 const MED_TYPE_COLORS = { vitamin: "#18ff6d", supplement: "#18d6ff", prescription: "#ffb631", "pre-workout": "#ff69b4" };
 
 const DEFAULT_MEDS = [
@@ -763,6 +783,8 @@ const TABS = [
   { id: "family", label: "FAM", icon: "\u2605" },
   { id: "wx", label: "WX", icon: "\u2602" },
   { id: "news", label: "NEWS", icon: "\u25CE" },
+  { id: "music", label: "MUSIC", icon: "\u266B" },
+  { id: "garage", label: "GARAGE", icon: "\u2638" },
   { id: "assist", label: "ASSIST", icon: "\u25A3" },
   { id: "sys", label: "SYS", icon: "\u2699" },
 ];
@@ -968,6 +990,65 @@ export default function CommandCenter() {
   // ─── Social Accountability (Feature 8) ─────────────────────
   const [accountabilityWeeks, setAccountabilityWeeks] = useState(() => loadStorage("cc_accountability_weeks", []));
 
+  // ─── Voice Commands (Feature B1) ───────────────────────────
+  const [voiceListening, setVoiceListening] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const speechRecognitionRef = useRef(null);
+
+  // ─── Automated Daily Journal (Feature B2) ──────────────────
+  const [journal, setJournal] = useState(() => loadStorage("cc_journal", []));
+  const [journalLoading, setJournalLoading] = useState(false);
+
+  // ─── Investment Portfolio (Feature B3) ─────────────────────
+  const [portfolio, setPortfolio] = useState(() => loadStorage("cc_portfolio", []));
+  const [watchlist, setWatchlist] = useState(() => loadStorage("cc_watchlist", []));
+  const [newHoldingTicker, setNewHoldingTicker] = useState("");
+  const [newHoldingShares, setNewHoldingShares] = useState("");
+  const [newHoldingCost, setNewHoldingCost] = useState("");
+  const [newHoldingPrice, setNewHoldingPrice] = useState("");
+  const [newWatchTicker, setNewWatchTicker] = useState("");
+
+  // ─── Fallout Perks/Achievements (Feature B4) ──────────────
+  const [perks, setPerks] = useState(() => loadStorage("cc_perks", {}));
+  const [perkUnlockAnim, setPerkUnlockAnim] = useState(null);
+
+  // ─── AI Coaching (Feature B5) ─────────────────────────────
+  const [aiCoaching, setAiCoaching] = useState(() => loadStorage("cc_ai_coaching", null));
+  const [aiCoachingLoading, setAiCoachingLoading] = useState(false);
+
+  // ─── Elizabeth Video Call (Feature B6) ─────────────────────
+  const [videoCalls, setVideoCalls] = useState(() => loadStorage("cc_video_calls", []));
+  const [newCallDate, setNewCallDate] = useState("");
+  const [newCallTime, setNewCallTime] = useState("18:00");
+  const [newCallPlatform, setNewCallPlatform] = useState("facetime");
+  const [sharedActivities, setSharedActivities] = useState(() => loadStorage("cc_shared_activities", []));
+  const [newActivityName, setNewActivityName] = useState("");
+
+  // ─── Vehicle Maintenance (Feature B7) ─────────────────────
+  const [vehicles, setVehicles] = useState(() => loadStorage("cc_vehicles", [
+    { id: 1, name: "Primary Vehicle", year: "", make: "", model: "", mileage: 0, items: [
+      { name: "Oil Change", intervalMiles: 5000, intervalMonths: 6, lastDate: null, lastMiles: 0 },
+      { name: "Tire Rotation", intervalMiles: 7500, intervalMonths: 8, lastDate: null, lastMiles: 0 },
+      { name: "Brake Inspection", intervalMiles: 15000, intervalMonths: 12, lastDate: null, lastMiles: 0 },
+      { name: "Air Filter", intervalMiles: 15000, intervalMonths: 12, lastDate: null, lastMiles: 0 },
+      { name: "Transmission Fluid", intervalMiles: 30000, intervalMonths: 24, lastDate: null, lastMiles: 0 },
+      { name: "Coolant Flush", intervalMiles: 30000, intervalMonths: 24, lastDate: null, lastMiles: 0 },
+    ]}
+  ]));
+  const [maintenanceLog, setMaintenanceLog] = useState(() => loadStorage("cc_maintenance_log", []));
+
+  // ─── Spotify (Music Tab) ──────────────────────────────────
+  const [spotifyToken, setSpotifyToken] = useState(() => localStorage.getItem("spotify_access_token") || "");
+  const [spotifyPlaying, setSpotifyPlaying] = useState(false);
+  const [spotifyTrackUri, setSpotifyTrackUri] = useState("");
+  const [spotifySearch, setSpotifySearch] = useState("");
+  const [spotifyResults, setSpotifyResults] = useState([]);
+  const [spotifyPlaylists, setSpotifyPlaylists] = useState([]);
+  const [spotifyCurrentTrack, setSpotifyCurrentTrack] = useState(null);
+
+  // ─── Driving Mode ─────────────────────────────────────────
+  const [drivingMode, setDrivingMode] = useState(false);
+
   // ─── Meds / Vitamins ──────────────────────────────────────
   const [meds, setMeds] = useState(() => {
     const stored = loadStorage("cc_meds", null);
@@ -1044,6 +1125,15 @@ export default function CommandCenter() {
   useEffect(() => { localStorage.setItem("cc_activities", JSON.stringify(activities)); }, [activities]);
   useEffect(() => { localStorage.setItem("cc_accountability_weeks", JSON.stringify(accountabilityWeeks)); }, [accountabilityWeeks]);
   useEffect(() => { if (sleepModeOverride !== null) localStorage.setItem("cc_sleep_mode_override", JSON.stringify(sleepModeOverride)); }, [sleepModeOverride]);
+  useEffect(() => { localStorage.setItem("cc_journal", JSON.stringify(journal)); }, [journal]);
+  useEffect(() => { localStorage.setItem("cc_portfolio", JSON.stringify(portfolio)); }, [portfolio]);
+  useEffect(() => { localStorage.setItem("cc_watchlist", JSON.stringify(watchlist)); }, [watchlist]);
+  useEffect(() => { localStorage.setItem("cc_perks", JSON.stringify(perks)); }, [perks]);
+  useEffect(() => { if (aiCoaching) localStorage.setItem("cc_ai_coaching", JSON.stringify(aiCoaching)); }, [aiCoaching]);
+  useEffect(() => { localStorage.setItem("cc_video_calls", JSON.stringify(videoCalls)); }, [videoCalls]);
+  useEffect(() => { localStorage.setItem("cc_shared_activities", JSON.stringify(sharedActivities)); }, [sharedActivities]);
+  useEffect(() => { localStorage.setItem("cc_vehicles", JSON.stringify(vehicles)); }, [vehicles]);
+  useEffect(() => { localStorage.setItem("cc_maintenance_log", JSON.stringify(maintenanceLog)); }, [maintenanceLog]);
 
   // ─── Show wellness check once per day ─────────────────────
   useEffect(() => {
@@ -2726,6 +2816,452 @@ export default function CommandCenter() {
     );
   };
 
+  // ─── Voice Commands (Feature B1) ───────────────────────────
+  const toggleVoiceListening = useCallback(() => {
+    if (voiceListening) {
+      speechRecognitionRef.current?.stop();
+      setVoiceListening(false);
+      return;
+    }
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) { alert("Voice commands not supported in this browser."); return; }
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = "en-US";
+    recognition.onresult = (e) => {
+      const transcript = e.results[0][0].transcript.toLowerCase().trim();
+      setVoiceTranscript(transcript);
+      processVoiceCommand(transcript);
+    };
+    recognition.onerror = () => setVoiceListening(false);
+    recognition.onend = () => setVoiceListening(false);
+    speechRecognitionRef.current = recognition;
+    recognition.start();
+    setVoiceListening(true);
+  }, [voiceListening]);
+
+  const processVoiceCommand = useCallback((cmd) => {
+    const tabMap = { stat: "stat", status: "stat", tasks: "tasks", training: "training", train: "training", health: "health", meds: "meds", medications: "meds", calendar: "calendar", finance: "finance", money: "finance", family: "family", weather: "wx", news: "news", assist: "assist", chat: "assist", system: "sys", settings: "sys", garage: "garage", vehicle: "garage" };
+    // Tab navigation
+    for (const [word, tab] of Object.entries(tabMap)) {
+      if (cmd.includes(`open ${word}`) || cmd.includes(`go to ${word}`) || cmd.includes(`show ${word}`) || cmd === word) {
+        setActiveTab(tab);
+        return;
+      }
+    }
+    // Weight logging
+    const weightMatch = cmd.match(/log (?:weight|weigh) (\d+(?:\.\d+)?)/);
+    if (weightMatch) {
+      const w = parseFloat(weightMatch[1]);
+      setWeights(prev => [...prev, { date: localDate, weight: w }]);
+      return;
+    }
+    // Add task
+    const taskMatch = cmd.match(/add task (.+)/);
+    if (taskMatch) {
+      setTasks(prev => [...prev, { name: taskMatch[1], category: "daily", done: false, dueDate: localDate, priority: "med" }]);
+      return;
+    }
+    // Speak briefing
+    if (cmd.includes("briefing") || cmd.includes("brief me") || cmd.includes("morning report")) {
+      speakBriefing();
+      return;
+    }
+    // Water logging
+    const waterMatch = cmd.match(/log (\d+) (?:ounces|oz|water)/);
+    if (waterMatch) {
+      setWaterOz(prev => prev + parseInt(waterMatch[1]));
+      return;
+    }
+    // Music commands
+    if (cmd.includes("pause music") || cmd === "pause" || cmd === "stop music") {
+      setSpotifyPlaying(false); return;
+    }
+    if (cmd.includes("resume") || cmd.includes("play music")) {
+      setSpotifyPlaying(true); return;
+    }
+    if (cmd.includes("next track") || cmd === "next" || cmd === "skip") {
+      // Spotify SDK handles this via the player callback
+      return;
+    }
+    const playMatch = cmd.match(/play (.+)/);
+    if (playMatch && spotifyToken) {
+      spotifySearchTracks(playMatch[1]).then(() => {
+        // Auto-play first result
+        setTimeout(() => {
+          setSpotifyResults(prev => {
+            if (prev.length > 0) { setSpotifyTrackUri(prev[0].uri); setSpotifyPlaying(true); }
+            return prev;
+          });
+        }, 1500);
+      });
+      setActiveTab("music");
+      return;
+    }
+    // Driving mode
+    if (cmd.includes("driving mode") || cmd.includes("drive mode")) {
+      setDrivingMode(true); return;
+    }
+    // Fallback to AI chat
+    setChatMessages(prev => [...prev, { role: "user", content: cmd }]);
+    setActiveTab("assist");
+    setChatInput("");
+    setChatLoading(true);
+    fetch(`${PROXY_URL}/ai/chat`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ system: AI_SYSTEM_PROMPT, messages: [...chatMessages, { role: "user", content: cmd }] }),
+    }).then(r => r.json()).then(data => {
+      const text = data.content?.[0]?.text || "No response.";
+      setChatMessages(prev => [...prev, { role: "assistant", content: text }]);
+    }).catch(err => {
+      setChatMessages(prev => [...prev, { role: "assistant", content: `[ERROR] ${err.message}` }]);
+    }).finally(() => setChatLoading(false));
+  }, [chatMessages, localDate]);
+
+  // ─── Automated Daily Journal (Feature B2) ──────────────────
+  const generateJournal = useCallback(async () => {
+    setJournalLoading(true);
+    try {
+      const todayWeight = weights.filter(w => w.date === localDate)[0];
+      const todayMacro = macros.filter(m => m.date === localDate)[0];
+      const todayStrength = strengthLog.filter(s => s.date === localDate);
+      const todayWellness = wellnessLog[localDate];
+      const completedTasks = tasks.filter(t => t.done).map(t => t.name);
+      const pendingTasks = tasks.filter(t => !t.done).map(t => t.name);
+
+      const dataPoints = [
+        `Date: ${localDate}`,
+        elizabethWeek ? "Elizabeth Week: Active" : "Elizabeth Week: Inactive",
+        todayWeight ? `Weight: ${todayWeight.weight} lbs` : "Weight: not logged",
+        todayMacro ? `Macros: P${todayMacro.protein}g C${todayMacro.carbs}g F${todayMacro.fat}g` : "Macros: not logged",
+        `Water: ${waterOz}oz / ${WATER_TARGET}oz`,
+        ouraData ? `Oura: Sleep ${ouraData.sleepScore}, Readiness ${ouraData.readinessScore}, Steps ${ouraData.steps}` : "Oura: no data",
+        todayStrength.length > 0 ? `Training: ${todayStrength.map(s => `${s.exercise} ${s.weight}x${s.reps}`).join(", ")}` : "Training: Rest day",
+        todayWellness ? `Wellness: Feeling ${todayWellness.feeling}/5, Energy ${todayWellness.energy}/5` : "Wellness: not checked",
+        `Tasks completed: ${completedTasks.join(", ") || "none"}`,
+        `Tasks pending: ${pendingTasks.join(", ") || "none"}`,
+        `Meds taken: ${Object.keys(medsTakenToday).filter(k => medsTakenToday[k]).length}/${meds.length}`,
+      ];
+
+      const res = await fetch(`${PROXY_URL}/ai/chat`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system: "You are the Command Center's daily journal writer for Courier 6. Write a concise, reflective daily journal entry (3-5 paragraphs) based on the data provided. Include accomplishments, areas for improvement, and a motivational closing. Write in first person as if Courier 6 is journaling. Use a tone that's direct but introspective.",
+          messages: [{ role: "user", content: `Daily data:\n${dataPoints.join("\n")}` }],
+        }),
+      });
+      const data = await res.json();
+      const text = data.content?.[0]?.text || "Journal generation failed.";
+      const entry = { date: localDate, text, generatedAt: new Date().toISOString() };
+      setJournal(prev => [entry, ...prev.filter(j => j.date !== localDate)]);
+    } catch (err) {
+      const entry = { date: localDate, text: `[ERROR] ${err.message}`, generatedAt: new Date().toISOString() };
+      setJournal(prev => [entry, ...prev.filter(j => j.date !== localDate)]);
+    } finally {
+      setJournalLoading(false);
+    }
+  }, [localDate, weights, macros, strengthLog, wellnessLog, tasks, waterOz, ouraData, medsTakenToday, meds, elizabethWeek, chatMessages]);
+
+  // ─── Investment Portfolio (Feature B3) ─────────────────────
+  const addHolding = () => {
+    if (!newHoldingTicker.trim()) return;
+    setPortfolio(prev => [...prev, {
+      id: Date.now(), ticker: newHoldingTicker.trim().toUpperCase(),
+      shares: parseFloat(newHoldingShares) || 0,
+      costBasis: parseFloat(newHoldingCost) || 0,
+      currentPrice: parseFloat(newHoldingPrice) || 0,
+      lastUpdated: localDate,
+    }]);
+    setNewHoldingTicker(""); setNewHoldingShares(""); setNewHoldingCost(""); setNewHoldingPrice("");
+  };
+
+  const updateHoldingPrice = (id, price) => {
+    setPortfolio(prev => prev.map(h => h.id === id ? { ...h, currentPrice: parseFloat(price) || 0, lastUpdated: localDate } : h));
+  };
+
+  const removeHolding = (id) => setPortfolio(prev => prev.filter(h => h.id !== id));
+
+  const portfolioTotal = useMemo(() => {
+    const totalValue = portfolio.reduce((s, h) => s + h.shares * h.currentPrice, 0);
+    const totalCost = portfolio.reduce((s, h) => s + h.shares * h.costBasis, 0);
+    const gain = totalValue - totalCost;
+    const gainPct = totalCost > 0 ? ((gain / totalCost) * 100).toFixed(1) : "0.0";
+    return { totalValue, totalCost, gain, gainPct };
+  }, [portfolio]);
+
+  // ─── Perks / Achievements Check (Feature B4) ──────────────
+  const checkPerks = useCallback(() => {
+    const stats = {
+      strengthLog: strengthLog.length,
+      activities: activities.length,
+      waterDays: (() => { const w = loadStorage("cc_water", {}); return Object.values(w).filter(v => v >= WATER_TARGET).length; })(),
+      tasksCompleted: tasks.filter(t => t.done).length + (loadStorage("cc_tasks_completed_total", 0)),
+      coachingReports: aiCoaching ? 1 : 0,
+      journal: journal.length,
+      videoCalls: videoCalls.length,
+      chatMessages: chatMessages.length,
+      maxStreak: Object.values(streaks).reduce((max, s) => Math.max(max, s.best || 0), 0),
+      underBudgetMonths: loadStorage("cc_under_budget_months", 0),
+      wellnessChecks: Object.keys(wellnessLog).length,
+      weatherChecks: loadStorage("cc_weather_checks", 0),
+      allMedsDays: loadStorage("cc_all_meds_days", 0),
+      portfolio: portfolio.length,
+    };
+
+    let newUnlock = null;
+    const updated = { ...perks };
+    PERKS_DEF.forEach(perk => {
+      const progress = perk.check(stats);
+      const wasUnlocked = updated[perk.id]?.unlocked;
+      updated[perk.id] = { progress: Math.min(progress, perk.target), unlocked: progress >= perk.target, unlockedAt: wasUnlocked ? updated[perk.id].unlockedAt : (progress >= perk.target ? new Date().toISOString() : null) };
+      if (!wasUnlocked && progress >= perk.target) newUnlock = perk;
+    });
+
+    setPerks(updated);
+    if (newUnlock) {
+      setPerkUnlockAnim(newUnlock);
+      try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const osc = ctx.createOscillator(); osc.type = "sine"; osc.frequency.value = 523; osc.connect(ctx.destination); osc.start(); setTimeout(() => { osc.frequency.value = 659; }, 150); setTimeout(() => { osc.frequency.value = 784; }, 300); setTimeout(() => { osc.stop(); ctx.close(); }, 600); } catch {}
+      setTimeout(() => setPerkUnlockAnim(null), 4000);
+    }
+  }, [strengthLog, activities, tasks, journal, videoCalls, chatMessages, streaks, wellnessLog, portfolio, perks, aiCoaching]);
+
+  // Check perks on data changes
+  useEffect(() => { checkPerks(); }, [strengthLog.length, activities.length, journal.length, videoCalls.length, portfolio.length]);
+
+  // ─── AI Coaching (Feature B5) ─────────────────────────────
+  const generateAICoaching = useCallback(async () => {
+    setAiCoachingLoading(true);
+    try {
+      const weekStart = new Date(today);
+      weekStart.setDate(weekStart.getDate() - 6);
+      const weekDates = [];
+      for (let i = 0; i < 7; i++) { const d = new Date(weekStart); d.setDate(d.getDate() + i); weekDates.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`); }
+
+      const weekStrength = strengthLog.filter(s => weekDates.some(d => s.date?.includes(d.slice(5))));
+      const weekWeights = weights.filter(w => weekDates.includes(w.date));
+      const weekMacros = macros.filter(m => weekDates.includes(m.date));
+
+      const dataPoints = [
+        `Training sessions this week: ${weekStrength.length > 0 ? [...new Set(weekStrength.map(s => s.date))].length : 0}/4`,
+        weekStrength.length > 0 ? `Exercises: ${weekStrength.map(s => `${s.exercise} ${s.weight}x${s.reps}`).join(", ")}` : "No training logged",
+        weekWeights.length > 0 ? `Weight trend: ${weekWeights.map(w => `${w.date}: ${w.weight}lbs`).join(", ")}` : "No weight data",
+        weekMacros.length > 0 ? `Avg macros: P${Math.round(weekMacros.reduce((s,m) => s+m.protein,0)/weekMacros.length)}g C${Math.round(weekMacros.reduce((s,m) => s+m.carbs,0)/weekMacros.length)}g F${Math.round(weekMacros.reduce((s,m) => s+m.fat,0)/weekMacros.length)}g` : "No macro data",
+        `Current PRs: ${Object.entries(prs).slice(0, 5).map(([e, p]) => `${e}: ${p.weight}lbs x${p.reps}`).join(", ") || "none"}`,
+        ouraData ? `Latest Oura: Sleep ${ouraData.sleepScore}, Readiness ${ouraData.readinessScore}, Steps ${ouraData.steps}` : "No Oura data",
+        `Habit streaks: ${Object.entries(streaks).filter(([,s]) => s.current > 0).map(([name, s]) => `${name}: ${s.current}d`).join(", ") || "none"}`,
+        weightGoal.target ? `Weight goal: ${weightGoal.target}lbs by ${weightGoal.date || "no deadline"}` : "No weight goal set",
+        `Macro targets: P${macroTargets.protein}g C${macroTargets.carbs}g F${macroTargets.fat}g (${macroTargets.calories}kcal)`,
+      ];
+
+      const res = await fetch(`${PROXY_URL}/ai/chat`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system: "You are the Command Center's AI strength and performance coach for Courier 6. Analyze the week's data and provide: 1) Top 3 wins this week 2) Top 3 areas to improve 3) Specific recommendations for next week including training adjustments, nutrition tweaks, and recovery tips. Be concise, direct, actionable. Use Fallout-themed language where appropriate.",
+          messages: [{ role: "user", content: `Weekly performance data:\n${dataPoints.join("\n")}` }],
+          max_tokens: 1024,
+        }),
+      });
+      const data = await res.json();
+      const text = data.content?.[0]?.text || "Coaching analysis unavailable.";
+      setAiCoaching({ text, generatedAt: new Date().toISOString(), week: getWeekStart(localDate) });
+      // Track for perks
+      const count = loadStorage("cc_coaching_count", 0);
+      localStorage.setItem("cc_coaching_count", JSON.stringify(count + 1));
+    } catch (err) {
+      setAiCoaching({ text: `[ERROR] ${err.message}`, generatedAt: new Date().toISOString(), week: getWeekStart(localDate) });
+    } finally {
+      setAiCoachingLoading(false);
+    }
+  }, [strengthLog, weights, macros, prs, ouraData, streaks, weightGoal, macroTargets, localDate]);
+
+  // ─── Elizabeth Video Call (Feature B6) ─────────────────────
+  const scheduleVideoCall = () => {
+    if (!newCallDate) return;
+    setVideoCalls(prev => [...prev, {
+      id: Date.now(), date: newCallDate, time: newCallTime,
+      platform: newCallPlatform, completed: false,
+    }]);
+    setNewCallDate("");
+    // Also add to Elizabeth's localStorage for cross-app visibility
+    const ekNotes = loadStorage("elizabeth_notes", []);
+    ekNotes.unshift({ text: `Video call scheduled: ${newCallDate} at ${newCallTime}!`, date: localDate, hearted: false });
+    localStorage.setItem("elizabeth_notes", JSON.stringify(ekNotes));
+  };
+
+  const completeVideoCall = (id) => setVideoCalls(prev => prev.map(c => c.id === id ? { ...c, completed: true } : c));
+  const removeVideoCall = (id) => setVideoCalls(prev => prev.filter(c => c.id !== id));
+
+  const nextVideoCall = useMemo(() => {
+    const upcoming = videoCalls.filter(c => !c.completed && c.date >= localDate).sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+    return upcoming[0] || null;
+  }, [videoCalls, localDate]);
+
+  const addSharedActivity = () => {
+    if (!newActivityName.trim()) return;
+    setSharedActivities(prev => [...prev, { id: Date.now(), name: newActivityName.trim(), completedDates: [] }]);
+    setNewActivityName("");
+  };
+
+  const toggleSharedActivity = (id) => {
+    setSharedActivities(prev => prev.map(a => {
+      if (a.id !== id) return a;
+      const done = a.completedDates.includes(localDate);
+      return { ...a, completedDates: done ? a.completedDates.filter(d => d !== localDate) : [...a.completedDates, localDate] };
+    }));
+  };
+
+  // ─── Vehicle Maintenance (Feature B7) ─────────────────────
+  const updateVehicleMileage = (vId, mileage) => {
+    setVehicles(prev => prev.map(v => v.id === vId ? { ...v, mileage: parseInt(mileage) || 0 } : v));
+  };
+
+  const updateVehicleInfo = (vId, field, value) => {
+    setVehicles(prev => prev.map(v => v.id === vId ? { ...v, [field]: value } : v));
+  };
+
+  const completeMaintenance = (vId, itemIdx) => {
+    setVehicles(prev => prev.map(v => {
+      if (v.id !== vId) return v;
+      const items = [...v.items];
+      items[itemIdx] = { ...items[itemIdx], lastDate: localDate, lastMiles: v.mileage };
+      return { ...v, items };
+    }));
+    const vehicle = vehicles.find(v => v.id === vId);
+    if (vehicle) {
+      setMaintenanceLog(prev => [...prev, {
+        id: Date.now(), vehicleId: vId, vehicleName: vehicle.name,
+        item: vehicle.items[itemIdx]?.name, date: localDate, mileage: vehicle.mileage,
+      }]);
+    }
+  };
+
+  const addMaintenanceItem = (vId, name) => {
+    if (!name.trim()) return;
+    setVehicles(prev => prev.map(v => {
+      if (v.id !== vId) return v;
+      return { ...v, items: [...v.items, { name: name.trim(), intervalMiles: 10000, intervalMonths: 12, lastDate: null, lastMiles: 0 }] };
+    }));
+  };
+
+  const getMaintenanceStatus = (item, vehicleMileage) => {
+    if (!item.lastDate && !item.lastMiles) return { status: "unknown", label: "NO DATA" };
+    const milesSince = vehicleMileage - item.lastMiles;
+    const milesPct = (milesSince / item.intervalMiles) * 100;
+    let monthsSince = 0;
+    if (item.lastDate) {
+      const last = new Date(item.lastDate);
+      const now = new Date();
+      monthsSince = (now.getFullYear() - last.getFullYear()) * 12 + (now.getMonth() - last.getMonth());
+    }
+    const monthsPct = (monthsSince / item.intervalMonths) * 100;
+    const pct = Math.max(milesPct, monthsPct);
+    if (pct >= 100) return { status: "overdue", label: "OVERDUE", pct };
+    if (pct >= 80) return { status: "soon", label: "DUE SOON", pct };
+    return { status: "ok", label: "OK", pct };
+  };
+
+  // ─── Spotify PKCE Auth & Functions ─────────────────────────
+  const SPOTIFY_CLIENT_ID = "1419a48fc3514d2da2c9c0b9315828bc";
+  const SPOTIFY_REDIRECT_URI = window.location.origin + "/callback";
+  const SPOTIFY_SCOPES = "streaming user-read-email user-read-private user-modify-playback-state user-read-playback-state playlist-read-private";
+
+  const spotifyLogin = useCallback(async () => {
+    const generateRandomString = (length) => {
+      const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+      let result = "";
+      const arr = new Uint8Array(length);
+      window.crypto.getRandomValues(arr);
+      arr.forEach(x => { result += chars[x % chars.length]; });
+      return result;
+    };
+    const verifier = generateRandomString(128);
+    localStorage.setItem("spotify_code_verifier", verifier);
+    const encoder = new TextEncoder();
+    const data = encoder.encode(verifier);
+    const digest = await window.crypto.subtle.digest("SHA-256", data);
+    const challenge = btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const params = new URLSearchParams({
+      client_id: SPOTIFY_CLIENT_ID,
+      response_type: "code",
+      redirect_uri: SPOTIFY_REDIRECT_URI,
+      scope: SPOTIFY_SCOPES,
+      code_challenge_method: "S256",
+      code_challenge: challenge,
+    });
+    window.location.href = `https://accounts.spotify.com/authorize?${params}`;
+  }, []);
+
+  const refreshSpotifyToken = useCallback(async () => {
+    const refreshToken = localStorage.getItem("spotify_refresh_token");
+    if (!refreshToken) return;
+    try {
+      const res = await fetch("https://accounts.spotify.com/api/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: SPOTIFY_CLIENT_ID,
+          grant_type: "refresh_token",
+          refresh_token: refreshToken,
+        }),
+      });
+      const data = await res.json();
+      if (data.access_token) {
+        localStorage.setItem("spotify_access_token", data.access_token);
+        if (data.refresh_token) localStorage.setItem("spotify_refresh_token", data.refresh_token);
+        localStorage.setItem("spotify_token_expiry", String(Date.now() + data.expires_in * 1000));
+        setSpotifyToken(data.access_token);
+      }
+    } catch (err) { console.error("Spotify token refresh failed:", err); }
+  }, []);
+
+  // Auto-refresh token before expiry
+  useEffect(() => {
+    const expiry = parseInt(localStorage.getItem("spotify_token_expiry") || "0");
+    if (expiry > 0 && spotifyToken) {
+      const timeUntilRefresh = expiry - Date.now() - 60000; // refresh 1 min before expiry
+      if (timeUntilRefresh <= 0) { refreshSpotifyToken(); return; }
+      const timer = setTimeout(refreshSpotifyToken, timeUntilRefresh);
+      return () => clearTimeout(timer);
+    }
+  }, [spotifyToken, refreshSpotifyToken]);
+
+  const spotifySearchTracks = useCallback(async (query) => {
+    if (!query.trim() || !spotifyToken) return;
+    try {
+      const res = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track,artist,album&limit=10`, {
+        headers: { Authorization: `Bearer ${spotifyToken}` },
+      });
+      const data = await res.json();
+      setSpotifyResults(data.tracks?.items || []);
+    } catch (err) { console.error("Spotify search error:", err); }
+  }, [spotifyToken]);
+
+  const fetchSpotifyPlaylists = useCallback(async () => {
+    if (!spotifyToken) return;
+    try {
+      const res = await fetch("https://api.spotify.com/v1/me/playlists?limit=20", {
+        headers: { Authorization: `Bearer ${spotifyToken}` },
+      });
+      const data = await res.json();
+      setSpotifyPlaylists(data.items || []);
+    } catch (err) { console.error("Spotify playlists error:", err); }
+  }, [spotifyToken]);
+
+  // Fetch playlists on token load
+  useEffect(() => { if (spotifyToken) fetchSpotifyPlaylists(); }, [spotifyToken, fetchSpotifyPlaylists]);
+
+  const spotifyLogout = () => {
+    localStorage.removeItem("spotify_access_token");
+    localStorage.removeItem("spotify_refresh_token");
+    localStorage.removeItem("spotify_token_expiry");
+    localStorage.removeItem("spotify_code_verifier");
+    setSpotifyToken("");
+    setSpotifyPlaylists([]);
+    setSpotifyResults([]);
+    setSpotifyCurrentTrack(null);
+  };
+
   // ─── TAB CONTENT ──────────────────────────────────────────
   const renderTab = () => {
     switch (activeTab) {
@@ -2937,6 +3473,70 @@ export default function CommandCenter() {
                   WEEKLY HISTORY
                 </button>
               </div>
+            </div>
+
+            {/* AI Coaching Section */}
+            <div style={{ marginTop: 20, borderTop: "1px solid var(--pip-border)", paddingTop: 16 }}>
+              <div className="section-title">// AI Performance Coach</div>
+              <button className="pip-btn" style={{ width: "100%", padding: "12px 16px", background: "rgba(255,105,180,.1)", borderColor: "#ff69b4" }} onClick={generateAICoaching} disabled={aiCoachingLoading}>
+                {aiCoachingLoading ? "ANALYZING..." : "GET AI COACHING"}
+              </button>
+              {aiCoaching && (
+                <div className="briefing-block" style={{ marginTop: 8, whiteSpace: "pre-wrap", fontSize: ".7rem", lineHeight: 1.6 }}>
+                  <div style={{ fontSize: ".55rem", color: "var(--pip-green-dim)", marginBottom: 8 }}>Generated: {new Date(aiCoaching.generatedAt).toLocaleDateString()}</div>
+                  {aiCoaching.text}
+                </div>
+              )}
+            </div>
+
+            {/* Daily Journal Section */}
+            <div style={{ marginTop: 20, borderTop: "1px solid var(--pip-border)", paddingTop: 16 }}>
+              <div className="section-title">// Daily Journal</div>
+              <button className="pip-btn" style={{ width: "100%", padding: "12px 16px" }} onClick={generateJournal} disabled={journalLoading}>
+                {journalLoading ? "WRITING..." : journal.find(j => j.date === localDate) ? "REGENERATE TODAY'S ENTRY" : "GENERATE JOURNAL ENTRY"}
+              </button>
+              {journal.slice(0, 5).map((entry, i) => (
+                <div key={i} className="briefing-block" style={{ marginTop: 8, cursor: "pointer" }} onClick={() => alert(entry.text)}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                    <span style={{ fontSize: ".7rem", fontWeight: "bold", color: entry.date === localDate ? "var(--pip-green)" : "var(--pip-green-dim)" }}>{entry.date}</span>
+                    <span style={{ fontSize: ".55rem", color: "var(--pip-green-dim)" }}>{new Date(entry.generatedAt).toLocaleTimeString()}</span>
+                  </div>
+                  <div style={{ fontSize: ".65rem", lineHeight: 1.5, maxHeight: 60, overflow: "hidden", color: "var(--pip-green-dim)" }}>
+                    {entry.text.slice(0, 150)}...
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Perks Progress */}
+            <div style={{ marginTop: 20, borderTop: "1px solid var(--pip-border)", paddingTop: 16 }}>
+              <div className="section-title">// Fallout Perks</div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".7rem", marginBottom: 8 }}>
+                <span>Unlocked: {Object.values(perks).filter(p => p.unlocked).length}/{PERKS_DEF.length}</span>
+                <span style={{ color: "var(--pip-amber)" }}>{Math.round((Object.values(perks).filter(p => p.unlocked).length / PERKS_DEF.length) * 100)}% Complete</span>
+              </div>
+              {PERKS_DEF.filter(p => perks[p.id]?.unlocked).slice(0, 5).map(perk => (
+                <div key={perk.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", fontSize: ".7rem" }}>
+                  <span style={{ fontSize: "1.1rem" }}>{perk.icon}</span>
+                  <span style={{ color: "var(--pip-amber)" }}>{perk.name}</span>
+                  <span style={{ color: "var(--pip-green-dim)", fontSize: ".55rem" }}>[{perk.cat}]</span>
+                </div>
+              ))}
+              {PERKS_DEF.filter(p => !perks[p.id]?.unlocked).slice(0, 3).map(perk => {
+                const progress = perks[perk.id]?.progress || 0;
+                const pct = Math.round((progress / perk.target) * 100);
+                return (
+                  <div key={perk.id} style={{ marginTop: 4, opacity: 0.6 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".6rem" }}>
+                      <span>{perk.icon} {perk.name} — {perk.desc}</span>
+                      <span>{progress}/{perk.target}</span>
+                    </div>
+                    <div style={{ height: 3, background: "rgba(24,255,109,.1)", marginTop: 2 }}>
+                      <div style={{ height: "100%", width: `${pct}%`, background: "var(--pip-green-dark)" }} />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         );
@@ -3853,6 +4453,50 @@ export default function CommandCenter() {
                 <button className="pip-btn" onClick={addTransaction}>LOG</button>
               </div>
             </div>
+
+            {/* Investment Portfolio */}
+            <div className="briefing-block" style={{ marginTop: 16 }}>
+              <h3>Investment Portfolio</h3>
+              {portfolio.length > 0 && (
+                <>
+                  <div className="fin-summary" style={{ marginBottom: 12 }}>
+                    <div className="fin-summary-card"><div className="label">VALUE</div><div className="value" style={{ color: "var(--pip-green)" }}>${portfolioTotal.totalValue.toFixed(2)}</div></div>
+                    <div className="fin-summary-card"><div className="label">COST</div><div className="value">${portfolioTotal.totalCost.toFixed(2)}</div></div>
+                    <div className="fin-summary-card"><div className="label">GAIN/LOSS</div><div className="value" style={{ color: portfolioTotal.gain >= 0 ? "var(--pip-green)" : "#ff4444" }}>${portfolioTotal.gain.toFixed(2)} ({portfolioTotal.gainPct}%)</div></div>
+                  </div>
+                  {portfolio.map(h => {
+                    const value = h.shares * h.currentPrice;
+                    const cost = h.shares * h.costBasis;
+                    const gain = value - cost;
+                    const gainPct = cost > 0 ? ((gain / cost) * 100).toFixed(1) : "0.0";
+                    return (
+                      <div key={h.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid rgba(24,255,109,.1)", fontSize: ".7rem" }}>
+                        <div>
+                          <div style={{ fontWeight: "bold" }}>{h.ticker}</div>
+                          <div style={{ fontSize: ".55rem", color: "var(--pip-green-dim)" }}>{h.shares} shares @ ${h.costBasis}</div>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                            <span>$</span>
+                            <input className="pip-input" type="number" step="0.01" style={{ width: 70, textAlign: "right", fontSize: ".65rem" }} value={h.currentPrice} onChange={e => updateHoldingPrice(h.id, e.target.value)} />
+                          </div>
+                          <div style={{ fontSize: ".55rem", color: gain >= 0 ? "var(--pip-green)" : "#ff4444" }}>{gain >= 0 ? "+" : ""}{gainPct}%</div>
+                        </div>
+                        <button className="pip-btn small" style={{ marginLeft: 8, fontSize: ".5rem" }} onClick={() => removeHolding(h.id)}>X</button>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+              <div style={{ marginTop: 8, fontSize: ".65rem", letterSpacing: 1, color: "var(--pip-green-dim)", marginBottom: 6 }}>ADD HOLDING</div>
+              <div className="input-row" style={{ flexWrap: "wrap" }}>
+                <input className="pip-input" placeholder="TICKER" value={newHoldingTicker} onChange={e => setNewHoldingTicker(e.target.value)} style={{ maxWidth: 80 }} />
+                <input className="pip-input" type="number" placeholder="Shares" value={newHoldingShares} onChange={e => setNewHoldingShares(e.target.value)} style={{ maxWidth: 70 }} />
+                <input className="pip-input" type="number" placeholder="Cost/sh" value={newHoldingCost} onChange={e => setNewHoldingCost(e.target.value)} style={{ maxWidth: 80 }} />
+                <input className="pip-input" type="number" placeholder="Price" value={newHoldingPrice} onChange={e => setNewHoldingPrice(e.target.value)} style={{ maxWidth: 70 }} />
+                <button className="pip-btn small" onClick={addHolding}>ADD</button>
+              </div>
+            </div>
           </div>
         );
       }
@@ -3960,6 +4604,79 @@ export default function CommandCenter() {
                   <a href="/elizabeth" style={{ display: "inline-block", padding: "8px 16px", background: "var(--pip-green)", color: "#000", borderRadius: 4, textDecoration: "none", fontFamily: "monospace", fontSize: ".8rem", letterSpacing: 1 }}>
                     OPEN ELIZABETH'S MAGIC KINGDOM {"\u2192"}
                   </a>
+                </div>
+              </div>
+            </div>
+
+            {/* ─── Video Call Scheduling ─── */}
+            <div style={{ marginTop: 24, borderTop: "1px solid var(--pip-green-dark)", paddingTop: 16 }}>
+              <div className="section-title">// Elizabeth Video Calls</div>
+              {nextVideoCall && (
+                <div className="family-card" style={{ marginTop: 8, borderColor: "#ff69b4" }}>
+                  <div style={{ fontSize: ".7rem", letterSpacing: 2, color: "#ff69b4", marginBottom: 6 }}>NEXT CALL</div>
+                  <div style={{ fontSize: "1.1rem", color: "var(--pip-green)" }}>{new Date(nextVideoCall.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}</div>
+                  <div style={{ fontSize: ".8rem" }}>at {nextVideoCall.time} via {nextVideoCall.platform === "facetime" ? "FaceTime" : "Google Meet"}</div>
+                  <div style={{ fontSize: ".7rem", color: "var(--pip-amber)", marginTop: 4 }}>
+                    {(() => {
+                      const callDate = new Date(nextVideoCall.date + "T" + nextVideoCall.time);
+                      const now = new Date();
+                      const diff = Math.round((callDate - now) / (1000 * 60 * 60));
+                      if (diff <= 0) return "CALL TIME!";
+                      if (diff < 24) return `In ${diff} hours`;
+                      return `In ${Math.ceil(diff / 24)} days`;
+                    })()}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    {nextVideoCall.platform === "facetime" ? (
+                      <a href="facetime://elizabeth" className="pip-btn small" style={{ textDecoration: "none", textAlign: "center" }}>CALL NOW</a>
+                    ) : (
+                      <a href="https://meet.google.com" target="_blank" rel="noopener noreferrer" className="pip-btn small" style={{ textDecoration: "none", textAlign: "center" }}>OPEN MEET</a>
+                    )}
+                    <button className="pip-btn small" onClick={() => completeVideoCall(nextVideoCall.id)}>MARK DONE</button>
+                  </div>
+                </div>
+              )}
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: ".65rem", letterSpacing: 2, color: "var(--pip-green-dim)", marginBottom: 6 }}>SCHEDULE NEW CALL</div>
+                <div className="input-row" style={{ flexWrap: "wrap" }}>
+                  <input type="date" className="pip-input" value={newCallDate} onChange={e => setNewCallDate(e.target.value)} style={{ maxWidth: 150 }} />
+                  <input type="time" className="pip-input" value={newCallTime} onChange={e => setNewCallTime(e.target.value)} style={{ maxWidth: 100 }} />
+                  <select className="pip-select" value={newCallPlatform} onChange={e => setNewCallPlatform(e.target.value)}>
+                    <option value="facetime">FaceTime</option>
+                    <option value="meet">Google Meet</option>
+                  </select>
+                  <button className="pip-btn small" onClick={scheduleVideoCall}>SCHEDULE</button>
+                </div>
+              </div>
+              {videoCalls.filter(c => c.completed).length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: ".65rem", letterSpacing: 2, color: "var(--pip-green-dim)", marginBottom: 6 }}>CALL HISTORY ({videoCalls.filter(c => c.completed).length} calls)</div>
+                  {videoCalls.filter(c => c.completed).slice(0, 5).map(c => (
+                    <div key={c.id} style={{ fontSize: ".6rem", padding: "3px 0", color: "var(--pip-green-dim)" }}>
+                      {c.date} at {c.time} — {c.platform}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Shared Activities */}
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontSize: ".65rem", letterSpacing: 2, color: "var(--pip-green-dim)", marginBottom: 6 }}>SHARED ACTIVITIES</div>
+                {sharedActivities.map(a => {
+                  const todayDone = a.completedDates.includes(localDate);
+                  return (
+                    <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", fontSize: ".7rem" }}>
+                      <div style={{ width: 18, height: 18, border: "2px solid var(--pip-green)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: ".6rem" }} onClick={() => toggleSharedActivity(a.id)}>
+                        {todayDone ? "\u2713" : ""}
+                      </div>
+                      <span style={{ color: todayDone ? "var(--pip-green)" : "var(--pip-green-dim)" }}>{a.name}</span>
+                      <span style={{ fontSize: ".5rem", color: "var(--pip-green-dark)" }}>({a.completedDates.length}x)</span>
+                    </div>
+                  );
+                })}
+                <div className="input-row" style={{ marginTop: 6 }}>
+                  <input className="pip-input" placeholder="New activity..." value={newActivityName} onChange={e => setNewActivityName(e.target.value)} onKeyDown={e => e.key === "Enter" && addSharedActivity()} />
+                  <button className="pip-btn small" onClick={addSharedActivity}>ADD</button>
                 </div>
               </div>
             </div>
@@ -4098,6 +4815,192 @@ export default function CommandCenter() {
           </div>
         );
       }
+
+      // ════════════════════════════════════════════════════════
+      // MUSIC TAB (Spotify)
+      // ════════════════════════════════════════════════════════
+      case "music":
+        return (
+          <div>
+            <div className="section-title">// Pip-Boy Radio</div>
+            {!spotifyToken ? (
+              <div style={{ textAlign: "center", padding: "40px 20px" }}>
+                <div style={{ fontSize: "2rem", marginBottom: 12 }}>{"\u266B"}</div>
+                <div style={{ fontSize: ".8rem", marginBottom: 16, color: "var(--pip-green)" }}>Connect your Spotify to play music</div>
+                <button className="pip-btn" style={{ padding: "12px 24px", fontSize: ".85rem" }} onClick={spotifyLogin}>
+                  LOGIN WITH SPOTIFY
+                </button>
+                <div style={{ fontSize: ".55rem", color: "var(--pip-green-dim)", marginTop: 12 }}>Requires Spotify Premium for playback</div>
+              </div>
+            ) : (
+              <>
+                {/* Player */}
+                <div className="briefing-block" style={{ marginBottom: 12 }}>
+                  <SpotifyPlayer
+                    token={spotifyToken}
+                    uris={spotifyTrackUri ? [spotifyTrackUri] : []}
+                    play={spotifyPlaying}
+                    callback={(state) => {
+                      setSpotifyPlaying(state.isPlaying);
+                      if (state.track) setSpotifyCurrentTrack(state.track);
+                    }}
+                    styles={{
+                      bgColor: "rgba(5,20,10,.8)",
+                      color: "#18ff6d",
+                      trackNameColor: "#18ff6d",
+                      trackArtistColor: "rgba(24,255,109,.6)",
+                      sliderColor: "#18ff6d",
+                      sliderHandleColor: "#18ff6d",
+                      sliderTrackColor: "rgba(24,255,109,.2)",
+                      activeColor: "#ffb631",
+                    }}
+                  />
+                </div>
+
+                {/* Search */}
+                <div className="briefing-block">
+                  <h3>Search</h3>
+                  <div className="input-row">
+                    <input className="pip-input" placeholder="Search tracks, artists..." value={spotifySearch}
+                      onChange={e => setSpotifySearch(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && spotifySearchTracks(spotifySearch)} />
+                    <button className="pip-btn" onClick={() => spotifySearchTracks(spotifySearch)}>SEARCH</button>
+                  </div>
+                  {spotifyResults.length > 0 && (
+                    <div style={{ marginTop: 8, maxHeight: 300, overflowY: "auto" }}>
+                      {spotifyResults.map(track => (
+                        <div key={track.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid rgba(24,255,109,.08)", cursor: "pointer" }}
+                          onClick={() => { setSpotifyTrackUri(track.uri); setSpotifyPlaying(true); }}>
+                          {track.album?.images?.[2] && <img src={track.album.images[2].url} alt="" style={{ width: 32, height: 32, borderRadius: 2 }} />}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: ".7rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{track.name}</div>
+                            <div style={{ fontSize: ".55rem", color: "var(--pip-green-dim)" }}>{track.artists?.map(a => a.name).join(", ")}</div>
+                          </div>
+                          <span style={{ fontSize: ".55rem", color: "var(--pip-green-dim)" }}>{Math.floor(track.duration_ms / 60000)}:{String(Math.floor((track.duration_ms % 60000) / 1000)).padStart(2, "0")}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Playlists */}
+                {spotifyPlaylists.length > 0 && (
+                  <div className="briefing-block" style={{ marginTop: 12 }}>
+                    <h3>Your Playlists</h3>
+                    <div style={{ maxHeight: 250, overflowY: "auto" }}>
+                      {spotifyPlaylists.map(pl => (
+                        <div key={pl.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid rgba(24,255,109,.08)", cursor: "pointer" }}
+                          onClick={() => { setSpotifyTrackUri(pl.uri); setSpotifyPlaying(true); }}>
+                          {pl.images?.[0] && <img src={pl.images[0].url} alt="" style={{ width: 40, height: 40, borderRadius: 2 }} />}
+                          <div>
+                            <div style={{ fontSize: ".7rem" }}>{pl.name}</div>
+                            <div style={{ fontSize: ".55rem", color: "var(--pip-green-dim)" }}>{pl.tracks?.total} tracks</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <button className="pip-btn" style={{ width: "100%", marginTop: 12, padding: "10px 16px", background: "rgba(255,68,68,.1)", borderColor: "#ff4444", color: "#ff4444" }} onClick={spotifyLogout}>
+                  DISCONNECT SPOTIFY
+                </button>
+              </>
+            )}
+          </div>
+        );
+
+      // ════════════════════════════════════════════════════════
+      // GARAGE TAB (Vehicle Maintenance)
+      // ════════════════════════════════════════════════════════
+      case "garage":
+        return (
+          <div>
+            <div className="section-title">// Vehicle Maintenance</div>
+            {vehicles.map(v => {
+              const overdueItems = v.items.filter(item => getMaintenanceStatus(item, v.mileage).status === "overdue");
+              const soonItems = v.items.filter(item => getMaintenanceStatus(item, v.mileage).status === "soon");
+              return (
+                <div key={v.id}>
+                  <div className="briefing-block">
+                    <h3>{v.name || "Vehicle"} {v.year && v.make ? `— ${v.year} ${v.make} ${v.model}` : ""}</h3>
+                    <div className="input-row" style={{ marginBottom: 8, flexWrap: "wrap" }}>
+                      <input className="pip-input" placeholder="Year" value={v.year} onChange={e => updateVehicleInfo(v.id, "year", e.target.value)} style={{ maxWidth: 60 }} />
+                      <input className="pip-input" placeholder="Make" value={v.make} onChange={e => updateVehicleInfo(v.id, "make", e.target.value)} style={{ maxWidth: 80 }} />
+                      <input className="pip-input" placeholder="Model" value={v.model} onChange={e => updateVehicleInfo(v.id, "model", e.target.value)} style={{ maxWidth: 80 }} />
+                      <input className="pip-input" type="number" placeholder="Mileage" value={v.mileage || ""} onChange={e => updateVehicleMileage(v.id, e.target.value)} style={{ maxWidth: 90 }} />
+                      <span style={{ fontSize: ".6rem", color: "var(--pip-green-dim)" }}>mi</span>
+                    </div>
+
+                    {overdueItems.length > 0 && (
+                      <div style={{ background: "rgba(255,68,68,.1)", border: "1px solid #ff4444", padding: "8px 12px", marginBottom: 8, fontSize: ".7rem", color: "#ff4444", letterSpacing: 1 }}>
+                        {"\u26A0"} {overdueItems.length} MAINTENANCE ITEM{overdueItems.length > 1 ? "S" : ""} OVERDUE
+                      </div>
+                    )}
+                    {soonItems.length > 0 && (
+                      <div style={{ background: "rgba(255,182,49,.08)", border: "1px solid var(--pip-amber)", padding: "8px 12px", marginBottom: 8, fontSize: ".7rem", color: "var(--pip-amber)", letterSpacing: 1 }}>
+                        {soonItems.length} item{soonItems.length > 1 ? "s" : ""} due soon
+                      </div>
+                    )}
+
+                    {v.items.map((item, idx) => {
+                      const ms = getMaintenanceStatus(item, v.mileage);
+                      const statusColor = ms.status === "overdue" ? "#ff4444" : ms.status === "soon" ? "var(--pip-amber)" : ms.status === "ok" ? "var(--pip-green)" : "var(--pip-green-dim)";
+                      return (
+                        <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid rgba(24,255,109,.08)" }}>
+                          <div>
+                            <div style={{ fontSize: ".75rem", fontWeight: "bold" }}>{item.name}</div>
+                            <div style={{ fontSize: ".55rem", color: "var(--pip-green-dim)" }}>
+                              Every {item.intervalMiles.toLocaleString()} mi / {item.intervalMonths} mo
+                              {item.lastDate && <> | Last: {item.lastDate} @ {item.lastMiles.toLocaleString()} mi</>}
+                            </div>
+                            {ms.pct != null && (
+                              <div style={{ height: 3, width: 100, background: "rgba(24,255,109,.1)", marginTop: 3 }}>
+                                <div style={{ height: "100%", width: `${Math.min(ms.pct, 100)}%`, background: statusColor }} />
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ textAlign: "right", display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: ".6rem", color: statusColor, fontWeight: "bold", letterSpacing: 1 }}>{ms.label}</span>
+                            <button className="pip-btn small" style={{ fontSize: ".5rem" }} onClick={() => completeMaintenance(v.id, idx)}>DONE</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    <div className="input-row" style={{ marginTop: 12 }}>
+                      <input className="pip-input" placeholder="Add maintenance item..." id={`add-item-${v.id}`} onKeyDown={e => { if (e.key === "Enter") { addMaintenanceItem(v.id, e.target.value); e.target.value = ""; } }} />
+                      <button className="pip-btn small" onClick={() => { const inp = document.getElementById(`add-item-${v.id}`); addMaintenanceItem(v.id, inp.value); inp.value = ""; }}>ADD</button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Maintenance Log */}
+            {maintenanceLog.length > 0 && (
+              <div className="briefing-block" style={{ marginTop: 16 }}>
+                <h3>Maintenance Log</h3>
+                {maintenanceLog.slice(-10).reverse().map((log, i) => (
+                  <div key={i} className="stat-row" style={{ fontSize: ".65rem" }}>
+                    <span className="stat-label">{log.date} — {log.item}</span>
+                    <span className="stat-value">{log.mileage?.toLocaleString()} mi</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button className="pip-btn" style={{ width: "100%", marginTop: 16, padding: "10px 16px" }} onClick={() => {
+              setVehicles(prev => [...prev, { id: Date.now(), name: `Vehicle ${prev.length + 1}`, year: "", make: "", model: "", mileage: 0, items: [
+                { name: "Oil Change", intervalMiles: 5000, intervalMonths: 6, lastDate: null, lastMiles: 0 },
+                { name: "Tire Rotation", intervalMiles: 7500, intervalMonths: 8, lastDate: null, lastMiles: 0 },
+                { name: "Brake Inspection", intervalMiles: 15000, intervalMonths: 12, lastDate: null, lastMiles: 0 },
+              ]}]);
+            }}>
+              ADD VEHICLE
+            </button>
+          </div>
+        );
 
       // ════════════════════════════════════════════════════════
       // AI ASSIST TAB
@@ -4285,6 +5188,20 @@ export default function CommandCenter() {
               </div>
             </div>
 
+            {/* Driving Mode */}
+            <div className="briefing-block">
+              <h3>Driving Mode</h3>
+              <button className="pip-btn" style={{ width: "100%", padding: "14px 16px", fontSize: ".85rem", background: "rgba(24,255,109,.1)" }} onClick={() => {
+                setDrivingMode(true);
+                try { document.documentElement.requestFullscreen(); } catch {}
+              }}>
+                {"\uD83D\uDE97"} ENTER DRIVING MODE
+              </button>
+              <div style={{ fontSize: ".55rem", color: "var(--pip-green-dim)", marginTop: 4 }}>
+                Full-screen car-optimized interface. Say "driving mode" to activate via voice.
+              </div>
+            </div>
+
             <button className="pip-btn" style={{ width: "100%", marginTop: 8, padding: "12px 16px" }} onClick={() => { if (window.confirm("Clear ALL localStorage data? This cannot be undone.")) { localStorage.clear(); window.location.reload(); } }}>
               FACTORY RESET
             </button>
@@ -4297,6 +5214,78 @@ export default function CommandCenter() {
   };
 
   // ─── MAIN RENDER ──────────────────────────────────────────
+  // Driving Mode — full-screen overlay
+  if (drivingMode) {
+    const nextTask = tasks.find(t => !t.done);
+    const wxTemp = weatherData?.olympia?.current?.temperature_2m;
+    const wxIcon = weatherData?.olympia?.current?.weather_code != null ? getWeatherIcon(weatherData.olympia.current.weather_code) : "";
+    return (
+      <div style={{
+        position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 99999,
+        background: "#000", color: "#18ff6d", fontFamily: "monospace",
+        display: "flex", flexDirection: "column", padding: 16,
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget) {} }}
+      >
+        {/* Top bar */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderBottom: "2px solid #18ff6d" }}>
+          <span style={{ fontSize: "2rem", fontWeight: "bold" }}>{new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+          <span style={{ fontSize: "1.4rem" }}>
+            {wxIcon} {wxTemp != null ? `${Math.round(wxTemp)}\u00B0F` : ""}
+          </span>
+          <span style={{ fontSize: "1rem", color: elizabethWeek ? "#ff69b4" : "var(--pip-green-dim)" }}>
+            {elizabethWeek ? "EW: ON" : ""}
+          </span>
+        </div>
+
+        {/* Now Playing */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12 }}>
+          {spotifyCurrentTrack ? (
+            <>
+              {spotifyCurrentTrack.image && <img src={spotifyCurrentTrack.image} alt="" style={{ width: 120, height: 120, borderRadius: 8, border: "2px solid #18ff6d" }} />}
+              <div style={{ fontSize: "1.3rem", fontWeight: "bold", textAlign: "center", maxWidth: "90%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{spotifyCurrentTrack.name}</div>
+              <div style={{ fontSize: ".9rem", color: "rgba(24,255,109,.6)" }}>{spotifyCurrentTrack.artists?.[0]?.name || ""}</div>
+            </>
+          ) : (
+            <div style={{ fontSize: "1.2rem", color: "var(--pip-green-dim)" }}>No track playing</div>
+          )}
+        </div>
+
+        {/* Music Controls */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          <button style={{ flex: 1, height: 80, fontSize: "1.8rem", background: "rgba(24,255,109,.1)", border: "2px solid #18ff6d", color: "#18ff6d", cursor: "pointer", fontFamily: "monospace" }}>{"\u23EE"}</button>
+          <button onClick={() => setSpotifyPlaying(!spotifyPlaying)} style={{ flex: 2, height: 80, fontSize: "2.2rem", background: spotifyPlaying ? "rgba(255,182,49,.15)" : "rgba(24,255,109,.15)", border: `2px solid ${spotifyPlaying ? "#ffb631" : "#18ff6d"}`, color: spotifyPlaying ? "#ffb631" : "#18ff6d", cursor: "pointer", fontFamily: "monospace" }}>
+            {spotifyPlaying ? "\u23F8" : "\u25B6"}
+          </button>
+          <button style={{ flex: 1, height: 80, fontSize: "1.8rem", background: "rgba(24,255,109,.1)", border: "2px solid #18ff6d", color: "#18ff6d", cursor: "pointer", fontFamily: "monospace" }}>{"\u23ED"}</button>
+        </div>
+
+        {/* Quick Actions */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+          <button onClick={toggleVoiceListening} style={{ height: 70, fontSize: "1.5rem", background: voiceListening ? "rgba(255,68,68,.2)" : "rgba(24,255,109,.1)", border: `2px solid ${voiceListening ? "#ff4444" : "#18ff6d"}`, color: voiceListening ? "#ff4444" : "#18ff6d", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "monospace" }}>
+            <span>{"\uD83C\uDF99\uFE0F"}</span><span style={{ fontSize: ".5rem", marginTop: 4 }}>VOICE</span>
+          </button>
+          <button onClick={() => { window.open("https://maps.google.com/maps?daddr=Home", "_blank"); }} style={{ height: 70, fontSize: "1.5rem", background: "rgba(24,255,109,.1)", border: "2px solid #18ff6d", color: "#18ff6d", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "monospace" }}>
+            <span>{"\uD83D\uDCCD"}</span><span style={{ fontSize: ".5rem", marginTop: 4 }}>NAV</span>
+          </button>
+          <button onClick={() => { speakBriefing(); }} style={{ height: 70, fontSize: "1.5rem", background: "rgba(24,255,109,.1)", border: "2px solid #18ff6d", color: "#18ff6d", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "monospace" }}>
+            <span>{"\uD83D\uDCCB"}</span><span style={{ fontSize: ".5rem", marginTop: 4 }}>BRIEF</span>
+          </button>
+          <button onClick={() => { setDrivingMode(false); if (document.fullscreenElement) document.exitFullscreen(); }} style={{ height: 70, fontSize: "1.5rem", background: "rgba(255,68,68,.15)", border: "2px solid #ff4444", color: "#ff4444", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "monospace" }}>
+            <span>{"\u2716"}</span><span style={{ fontSize: ".5rem", marginTop: 4 }}>EXIT</span>
+          </button>
+        </div>
+
+        {/* Bottom status */}
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", borderTop: "1px solid rgba(24,255,109,.3)", fontSize: ".65rem", color: "var(--pip-green-dim)" }}>
+          <span>{nextTask ? `Next: ${nextTask.name}` : "No pending tasks"}</span>
+          <span>{trtDaysUntil <= 2 ? `TRT: ${trtStatusText}` : ""}</span>
+          <span>{elizabethWeek ? "Elizabeth Week" : ""}</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <style>{globalCSS}</style>
@@ -4316,6 +5305,16 @@ export default function CommandCenter() {
               <div style={{ fontSize: ".7rem", color: "var(--pip-green-dim)", marginTop: 8 }}>Previous: {prCelebration.previous.weight}lbs x {prCelebration.previous.reps}</div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Perk Unlock Animation */}
+      {perkUnlockAnim && (
+        <div style={{ position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", zIndex: 9998, textAlign: "center", padding: "16px 32px", border: "2px solid var(--pip-amber)", background: "rgba(10,15,10,.95)", animation: "fadeIn .5s ease", minWidth: 260 }}>
+          <div style={{ fontSize: "1.5rem", marginBottom: 4 }}>{perkUnlockAnim.icon}</div>
+          <div style={{ fontSize: ".7rem", letterSpacing: 3, color: "var(--pip-amber)", marginBottom: 4 }}>PERK UNLOCKED</div>
+          <div style={{ fontSize: "1rem", color: "var(--pip-green)", fontWeight: "bold" }}>{perkUnlockAnim.name}</div>
+          <div style={{ fontSize: ".6rem", color: "var(--pip-green-dim)", marginTop: 4 }}>[{perkUnlockAnim.cat}] {perkUnlockAnim.desc}</div>
         </div>
       )}
 
@@ -4383,8 +5382,28 @@ export default function CommandCenter() {
             <div className="pipboy-screen-inner">
               <div className="pip-container">
                 <div className="pip-header">
-                  <h1>{"\u2622"} COMMAND CENTER</h1>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <h1>{"\u2622"} COMMAND CENTER</h1>
+                    <button
+                      onClick={toggleVoiceListening}
+                      style={{
+                        background: voiceListening ? "rgba(255,68,68,.3)" : "rgba(24,255,109,.1)",
+                        border: `1px solid ${voiceListening ? "#ff4444" : "var(--pip-green)"}`,
+                        color: voiceListening ? "#ff4444" : "var(--pip-green)",
+                        padding: "4px 8px", fontSize: ".7rem", fontFamily: "monospace",
+                        cursor: "pointer", letterSpacing: 1,
+                        animation: voiceListening ? "blink 1s infinite" : "none",
+                      }}
+                    >
+                      {voiceListening ? "\u25CF REC" : "\uD83C\uDF99\uFE0F MIC"}
+                    </button>
+                  </div>
                   <div className="subtitle">RobCo Industries (TM) Personal Operating System</div>
+                  {voiceTranscript && (
+                    <div style={{ fontSize: ".6rem", color: "var(--pip-amber)", marginTop: 2, fontStyle: "italic" }}>
+                      Voice: "{voiceTranscript}"
+                    </div>
+                  )}
                 </div>
 
                 <div className="pip-tabs">
@@ -4407,6 +5426,19 @@ export default function CommandCenter() {
                     {tickerItems.map((item, i) => <span key={`d${i}`}>{"\u25C6"} {item}</span>)}
                   </div>
                 </div>
+
+                {/* Mini Spotify Player */}
+                {spotifyToken && spotifyCurrentTrack && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 12px", background: "rgba(5,20,10,.9)", borderTop: "1px solid rgba(24,255,109,.15)", fontSize: ".6rem" }}>
+                    <span style={{ cursor: "pointer" }} onClick={() => setSpotifyPlaying(!spotifyPlaying)}>
+                      {spotifyPlaying ? "\u23F8" : "\u25B6"}
+                    </span>
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--pip-green)" }}>
+                      {spotifyCurrentTrack.name} — {spotifyCurrentTrack.artists?.[0]?.name || ""}
+                    </span>
+                    <span style={{ cursor: "pointer", color: "var(--pip-amber)" }} onClick={() => setActiveTab("music")}>{"\u266B"}</span>
+                  </div>
+                )}
 
                 <div className="pip-footer">
                   <span>SYS: NOMINAL</span>
