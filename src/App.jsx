@@ -283,15 +283,21 @@ const globalCSS = `
   @keyframes tabGlitch { 0%{opacity:1;transform:translate(0)}20%{opacity:.4;transform:translate(-2px,1px)}40%{opacity:.8;transform:translate(1px,-1px)}60%{opacity:.3;transform:translate(2px,0)}80%{opacity:.9;transform:translate(-1px,1px)}100%{opacity:1;transform:translate(0)} }
   @keyframes taskFlashGreen { 0%{background:rgba(24,255,109,.4);box-shadow:0 0 15px rgba(24,255,109,.5)}100%{background:rgba(10,30,15,.4);box-shadow:none} }
   @keyframes screenFlicker { 0%{opacity:1}50%{opacity:.85}100%{opacity:1} }
+  @keyframes buttonGlowPulse { 0%,100%{box-shadow:0 0 6px rgba(24,255,109,.2)}50%{box-shadow:0 0 18px rgba(24,255,109,.5),0 0 30px rgba(24,255,109,.15)} }
+  @keyframes alertPulse { 0%,100%{box-shadow:none;opacity:1}50%{box-shadow:0 0 12px rgba(255,182,49,.4);opacity:.85} }
+  @keyframes activeTabGlow { 0%,100%{box-shadow:0 2px 4px rgba(24,255,109,.2)}50%{box-shadow:0 2px 12px rgba(24,255,109,.5),0 4px 20px rgba(24,255,109,.15)} }
+  @keyframes phosphorFlash { 0%{opacity:0}50%{opacity:.06}100%{opacity:0} }
 
   /* CRT overlay with chromatic aberration */
   .crt-overlay { position:fixed;top:0;left:0;right:0;bottom:0;pointer-events:none;z-index:9999;
-    background:repeating-linear-gradient(0deg,rgba(0,0,0,.15) 0px,rgba(0,0,0,.15) 1px,transparent 1px,transparent 3px); }
-  .crt-overlay::after { content:'';position:fixed;top:0;left:0;right:0;height:4px;background:rgba(24,255,109,.08);animation:scanline 8s linear infinite;z-index:10000; }
+    background:repeating-linear-gradient(0deg,rgba(0,0,0,.22) 0px,rgba(0,0,0,.22) 1px,transparent 1px,transparent 3px); }
+  .crt-overlay::after { content:'';position:fixed;top:0;left:0;right:0;height:6px;background:rgba(24,255,109,.1);animation:scanline 6s linear infinite;z-index:10000; }
+  .crt-overlay::before { content:'';position:fixed;top:0;left:0;right:0;bottom:0;
+    background:radial-gradient(ellipse at center,transparent 60%,rgba(0,0,0,.35) 100%);z-index:10001; }
 
   /* Chromatic aberration on text — subtle RGB split */
-  .pip-container { text-shadow: 0.3px 0 0 rgba(255,0,0,.08), -0.3px 0 0 rgba(0,100,255,.08); }
-  .pip-header h1 { text-shadow: 0.5px 0 0 rgba(255,0,0,.12), -0.5px 0 0 rgba(0,100,255,.12), var(--pip-text-glow); }
+  .pip-container { text-shadow: -0.5px 0 0 rgba(255,0,0,.06), 0.5px 0 0 rgba(0,80,255,.06); }
+  .pip-header h1 { text-shadow: -1px 0 0 rgba(255,0,0,.1), 1px 0 0 rgba(0,80,255,.1), var(--pip-text-glow); }
 
   /* Screen flicker class — applied via JS randomly */
   .screen-flicker { animation: screenFlicker 150ms ease-in-out; }
@@ -307,36 +313,55 @@ const globalCSS = `
   /* ═══ PIP-BOY DEVICE FRAME ═══ */
   .pipboy-device { position:relative;max-width:960px;margin:0 auto;padding:18px;min-height:100vh; }
 
-  .pipboy-frame { position:relative;border-radius:18px;border:3px solid var(--frame-color);
-    background:linear-gradient(135deg, var(--frame-highlight) 0%, var(--frame-color) 30%, var(--frame-shadow) 100%);
-    box-shadow: 0 0 0 1px rgba(24,255,109,.06), inset 0 0 0 1px rgba(0,0,0,.5), 0 4px 30px rgba(0,0,0,.6), 0 0 60px rgba(24,255,109,.04);
-    padding:6px; overflow:hidden; }
+  .pipboy-frame { position:relative;border-radius:20px;border:3px solid #3a3e3a;
+    background:linear-gradient(145deg, #3d423d 0%, #2a2e2a 25%, #1a1d1a 60%, #0f110f 100%);
+    box-shadow: 0 0 0 1px rgba(24,255,109,.06), inset 0 0 0 1px rgba(255,255,255,.04), inset 0 2px 0 rgba(255,255,255,.06),
+      0 6px 40px rgba(0,0,0,.7), 0 0 80px rgba(24,255,109,.04), 0 20px 60px rgba(0,0,0,.4);
+    padding:8px 6px 6px; overflow:hidden; }
 
-  /* RobCo Industries etched text */
-  .pipboy-frame::before { content:'RobCo Industries (TM)';position:absolute;top:6px;left:50%;transform:translateX(-50%);
-    font-family:'Share Tech Mono',monospace;font-size:.5rem;letter-spacing:4px;text-transform:uppercase;
-    color:rgba(24,255,109,.12);z-index:5;pointer-events:none; }
+  /* RobCo Industries etched label */
+  .pipboy-frame-label { text-align:center;font-family:'Share Tech Mono',monospace;font-size:.5rem;letter-spacing:5px;text-transform:uppercase;
+    color:rgba(24,255,109,.15);padding:4px 0 6px;pointer-events:none;
+    text-shadow:0 1px 0 rgba(0,0,0,.5),0 -1px 0 rgba(255,255,255,.03); }
 
   /* Corner rivets */
-  .pipboy-rivet { position:absolute;width:10px;height:10px;border-radius:50%;z-index:6;
-    background:radial-gradient(circle at 35% 35%, #5a5e5a, #2a2e2a 60%, #1a1d1a);
-    box-shadow:inset 0 1px 1px rgba(255,255,255,.15), 0 1px 2px rgba(0,0,0,.5); }
+  .pipboy-rivet { position:absolute;width:12px;height:12px;border-radius:50%;z-index:6;
+    background:radial-gradient(circle at 30% 30%, #7a7e7a, #4a4e4a 40%, #2a2e2a 70%, #1a1d1a);
+    box-shadow:inset 0 1px 2px rgba(255,255,255,.2), inset 0 -1px 1px rgba(0,0,0,.3), 0 1px 3px rgba(0,0,0,.6);
+    border:1px solid rgba(255,255,255,.05); }
   .pipboy-rivet.tl { top:8px;left:8px; }
   .pipboy-rivet.tr { top:8px;right:8px; }
   .pipboy-rivet.bl { bottom:8px;left:8px; }
   .pipboy-rivet.br { bottom:8px;right:8px; }
 
-  /* Screen inset / bezel */
-  .pipboy-screen { background:var(--pip-bg);border-radius:10px;overflow:hidden;position:relative;
-    box-shadow:inset 0 0 30px rgba(0,0,0,.8), inset 0 0 6px rgba(24,255,109,.05), inset 0 2px 4px rgba(0,0,0,.6); }
+  /* Screen inset / bezel with phosphor edge glow */
+  .pipboy-screen { background:var(--pip-bg);border-radius:12px;overflow:hidden;position:relative;
+    box-shadow:inset 0 0 40px rgba(0,0,0,.9), inset 0 0 15px rgba(24,255,109,.06),
+      inset 0 0 80px rgba(0,0,0,.4), inset 0 2px 4px rgba(0,0,0,.7); }
+  .pipboy-screen::after { content:'';position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none;z-index:3;
+    box-shadow:inset 0 0 60px rgba(24,255,109,.04);
+    background:radial-gradient(ellipse at center,transparent 55%,rgba(24,255,109,.02) 100%); }
 
-  /* Knob / dial on bottom right */
-  .pipboy-knob { position:absolute;bottom:12px;right:16px;width:24px;height:24px;border-radius:50%;z-index:6;
-    background:radial-gradient(circle at 40% 35%, #6a6e6a, #3a3e3a 50%, #1a1e1a);
+  /* ═══ KNOBS ═══ */
+  .pipboy-knobs { display:flex;justify-content:space-around;align-items:flex-start;padding:8px 40px 4px;position:relative;z-index:6; }
+  .pipboy-knob-group { display:flex;flex-direction:column;align-items:center;gap:4px; }
+  .pipboy-knob { border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #7a7e7a, #4a4e4a 40%, #2a2e2a 70%, #1a1d1a);
     border:2px solid #4a4e4a;
-    box-shadow:0 2px 4px rgba(0,0,0,.5), inset 0 1px 1px rgba(255,255,255,.12); }
+    box-shadow:0 3px 6px rgba(0,0,0,.6), inset 0 1px 2px rgba(255,255,255,.15), 0 1px 0 rgba(255,255,255,.05);
+    position:relative; }
+  .pipboy-knob.small { width:22px;height:22px; }
+  .pipboy-knob.large { width:30px;height:30px; }
   .pipboy-knob::after { content:'';position:absolute;top:3px;left:50%;transform:translateX(-50%);
-    width:2px;height:8px;background:rgba(24,255,109,.2);border-radius:1px; }
+    width:2px;height:40%;background:rgba(24,255,109,.25);border-radius:1px; }
+  .knob-label { font-family:'Share Tech Mono',monospace;font-size:.45rem;letter-spacing:3px;text-transform:uppercase;
+    color:rgba(24,255,109,.18);pointer-events:none; }
+
+  /* ═══ ANTENNA STRIP ═══ */
+  .pipboy-antenna { position:absolute;left:-12px;top:50%;transform:translateY(-50%);width:8px;height:180px;
+    background:linear-gradient(180deg, #2a2e2a, #1a1d1a);border-radius:3px 0 0 3px;z-index:5;
+    box-shadow:-2px 0 4px rgba(0,0,0,.4);display:flex;flex-direction:column;justify-content:space-evenly;align-items:center;padding:6px 0; }
+  .antenna-tick { width:4px;height:1px;background:rgba(24,255,109,.12); }
 
   /* Scrollable content area inside the frame */
   .pipboy-screen-inner { max-height:calc(100vh - 80px);overflow-y:auto;overflow-x:hidden; }
@@ -355,14 +380,16 @@ const globalCSS = `
   .pip-tab { flex:1;min-width:0;padding:10px 4px;text-align:center;font-family:'Share Tech Mono',monospace;font-size:.6rem;letter-spacing:1px;text-transform:uppercase;
     color:var(--pip-green-dim);background:transparent;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .2s;white-space:nowrap; }
   .pip-tab:hover { color:var(--pip-green);background:rgba(24,255,109,.05); }
-  .pip-tab.active { color:var(--pip-green);border-bottom:2px solid var(--pip-green);background:rgba(24,255,109,.08);text-shadow:var(--pip-text-glow); }
+  .pip-tab.active { color:var(--pip-green);border-bottom:2px solid var(--pip-green);background:rgba(24,255,109,.08);text-shadow:var(--pip-text-glow);
+    animation:activeTabGlow 3s ease-in-out infinite; }
   .pip-tab-icon { margin-right:3px;font-size:.7rem; }
 
   .pip-body { border:1px solid var(--pip-border);border-top:none;background:var(--pip-panel);min-height:60vh;padding:20px;position:relative;animation:flicker 4s infinite; }
   .pip-body::before { content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:radial-gradient(ellipse at 50% 0%,rgba(24,255,109,.03) 0%,transparent 60%);pointer-events:none; }
   .pip-body.tab-switching { animation:tabGlitch 150ms ease-out; }
 
-  .section-title { font-size:.85rem;letter-spacing:4px;text-transform:uppercase;color:var(--pip-green);text-shadow:var(--pip-text-glow);border-bottom:1px solid var(--pip-border);padding-bottom:8px;margin-bottom:16px; }
+  .section-title { font-size:.85rem;letter-spacing:4px;text-transform:uppercase;color:var(--pip-green);text-shadow:var(--pip-text-glow);
+    border-bottom:1px solid var(--pip-border);border-left:3px solid var(--pip-green);padding-bottom:8px;padding-left:10px;margin-bottom:16px; }
   .stat-row { display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(24,255,109,.08);font-size:.8rem; }
   .stat-label { color:var(--pip-green-dim);letter-spacing:1px; }
   .stat-value { color:var(--pip-green);text-shadow:var(--pip-text-glow); }
@@ -375,7 +402,8 @@ const globalCSS = `
   .task-item.completed { opacity:.4;text-decoration:line-through; }
   .task-item.task-flash { animation:taskFlashGreen .6s ease-out; }
   .task-checkbox { width:16px;height:16px;border:1px solid var(--pip-green-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.7rem; }
-  .task-checkbox.checked { border-color:var(--pip-green);color:var(--pip-green);text-shadow:var(--pip-text-glow); }
+  .task-checkbox.checked { border-color:var(--pip-green);color:var(--pip-bg);background:var(--pip-green);text-shadow:none;
+    box-shadow:0 0 6px rgba(24,255,109,.4);transition:background .2s,box-shadow .2s; }
   .task-category { font-size:.55rem;letter-spacing:2px;text-transform:uppercase;margin-left:auto;padding:2px 6px;border:1px solid rgba(24,255,109,.15); }
   .task-priority { width:4px;height:100%;min-height:20px;flex-shrink:0;border-radius:2px; }
   .task-due { font-size:.55rem;color:var(--pip-green-dark);letter-spacing:1px; }
@@ -409,7 +437,8 @@ const globalCSS = `
   .training-exercise .name { color:var(--pip-green); }
   .training-exercise .detail { color:var(--pip-green-dim);font-size:.7rem;margin-top:4px; }
 
-  .pip-footer { border:1px solid var(--pip-border);border-top:none;background:rgba(5,20,8,.8);padding:8px 20px;display:flex;justify-content:space-between;font-size:.6rem;color:var(--pip-green-dark);letter-spacing:1px;flex-wrap:wrap;gap:4px; }
+  .pip-footer { border:1px solid var(--pip-border);border-top:1px solid rgba(24,255,109,.1);background:rgba(5,20,8,.8);padding:8px 20px;display:flex;justify-content:space-between;font-size:.6rem;color:var(--pip-green-dark);letter-spacing:1px;flex-wrap:wrap;gap:4px;
+    box-shadow:inset 0 1px 0 rgba(24,255,109,.05); }
   .cursor-blink::after { content:'\\2588';animation:blink 1s step-end infinite; }
 
   .glide-day { display:flex;gap:6px;margin:16px 0; }
@@ -425,9 +454,9 @@ const globalCSS = `
   .pip-select:focus { border-color:var(--pip-green); }
 
   /* Buttons with flash animation */
-  .pip-btn { background:rgba(24,255,109,.1);border:1px solid var(--pip-green-dim);color:var(--pip-green);font-family:'Share Tech Mono',monospace;font-size:.7rem;letter-spacing:2px;text-transform:uppercase;padding:8px 16px;cursor:pointer;transition:all .15s; }
-  .pip-btn:hover { background:rgba(24,255,109,.2);border-color:var(--pip-green);text-shadow:var(--pip-text-glow); }
-  .pip-btn:active { animation:buttonFlash .35s ease-out; }
+  .pip-btn { background:rgba(24,255,109,.1);border:1px solid var(--pip-green-dim);color:var(--pip-green);font-family:'Share Tech Mono',monospace;font-size:.7rem;letter-spacing:2px;text-transform:uppercase;padding:8px 16px;cursor:pointer;transition:all .15s;position:relative; }
+  .pip-btn:hover { background:rgba(24,255,109,.2);border-color:var(--pip-green);text-shadow:var(--pip-text-glow);animation:buttonGlowPulse 1.5s ease-in-out infinite; }
+  .pip-btn:active { animation:buttonFlash .35s ease-out;transform:translateY(1px); }
   .pip-btn:disabled { opacity:.4;cursor:not-allowed; }
   .pip-btn:disabled:active { animation:none; }
   .pip-btn.small { padding:4px 10px;font-size:.6rem;letter-spacing:1px; }
@@ -478,8 +507,9 @@ const globalCSS = `
   .chat-bubble .role-tag { font-size:.55rem;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px;opacity:.6; }
 
   /* Ticker */
-  .status-ticker { border:1px solid var(--pip-border);border-top:none;background:rgba(5,20,8,.9);overflow:hidden;height:22px;display:flex;align-items:center; }
-  .ticker-content { display:inline-block;white-space:nowrap;animation:tickerScroll 40s linear infinite;font-size:.6rem;color:var(--pip-green-dim);letter-spacing:1px; }
+  .status-ticker { border:1px solid var(--pip-border);border-top:none;background:rgba(5,20,8,.95);overflow:hidden;height:22px;display:flex;align-items:center;
+    box-shadow:inset 0 1px 3px rgba(0,0,0,.4); }
+  .ticker-content { display:inline-block;white-space:nowrap;animation:tickerScroll 35s linear infinite;font-size:.6rem;color:var(--pip-green-dim);letter-spacing:1px; }
   .ticker-content span { margin-right:32px; }
 
   /* Workout Mode */
@@ -524,6 +554,10 @@ const globalCSS = `
 
   /* Streak badge */
   .streak-badge { display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border:1px solid var(--pip-amber);color:var(--pip-amber);font-size:.75rem;letter-spacing:2px;text-shadow:0 0 8px rgba(255,182,49,.6);margin:8px 0; }
+
+  /* Alert pulsing for warnings */
+  .alert-pulse { animation:alertPulse 2.5s ease-in-out infinite; }
+  .briefing-line.alert { border-left:2px solid var(--pip-amber);padding-left:8px;animation:alertPulse 3s ease-in-out infinite; }
 
   /* Report history list */
   .report-history-item { padding:10px 12px;border:1px solid rgba(24,255,109,.1);margin-bottom:4px;background:rgba(10,30,15,.3);cursor:pointer;font-size:.78rem;display:flex;justify-content:space-between;transition:all .15s; }
@@ -575,15 +609,19 @@ const globalCSS = `
 
   @media (max-width:600px) {
     .pipboy-device { padding:4px; }
-    .pipboy-frame { border-radius:10px;border-width:2px;padding:3px; }
-    .pipboy-frame::before { font-size:.4rem;letter-spacing:2px;top:3px; }
-    .pipboy-rivet { width:7px;height:7px; }
+    .pipboy-frame { border-radius:12px;border-width:2px;padding:3px 3px 4px; }
+    .pipboy-frame-label { font-size:.4rem;letter-spacing:2px;padding:2px 0 4px; }
+    .pipboy-rivet { width:8px;height:8px; }
     .pipboy-rivet.tl { top:5px;left:5px; }
     .pipboy-rivet.tr { top:5px;right:5px; }
     .pipboy-rivet.bl { bottom:5px;left:5px; }
     .pipboy-rivet.br { bottom:5px;right:5px; }
-    .pipboy-knob { width:18px;height:18px;bottom:8px;right:10px; }
-    .pipboy-screen { border-radius:6px; }
+    .pipboy-knob.small { width:16px;height:16px; }
+    .pipboy-knob.large { width:22px;height:22px; }
+    .pipboy-knobs { padding:6px 20px 2px; }
+    .knob-label { font-size:.35rem;letter-spacing:2px; }
+    .pipboy-antenna { display:none; }
+    .pipboy-screen { border-radius:8px; }
     .pip-container { padding:0; }
     .pip-header h1 { font-size:1rem;letter-spacing:3px; }
     .pip-tab { font-size:.5rem;padding:8px 2px;letter-spacing:0; }
@@ -1733,19 +1771,19 @@ export default function ClawCommandCenter() {
             )}
 
             {(birthdays.length > 0 || trtDaysUntil <= 2 || (ewDaysUntil != null && ewDaysUntil <= 3)) && (
-              <div className="briefing-block">
+              <div className="briefing-block alert-pulse">
                 <h3>Alerts</h3>
                 {ewDaysUntil != null && ewDaysUntil <= 3 && (
-                  <div className="briefing-line" style={{ color: "var(--pip-amber)", fontWeight: "bold" }}>
+                  <div className="briefing-line alert" style={{ color: "var(--pip-amber)", fontWeight: "bold" }}>
                     ELIZABETH WEEK STARTS IN {ewDaysUntil} DAY{ewDaysUntil !== 1 ? "S" : ""}
                   </div>
                 )}
                 {trtDaysUntil <= 2 && (
-                  <div className="briefing-line" style={{ color: trtColor, fontWeight: "bold" }}>
+                  <div className="briefing-line alert" style={{ color: trtColor, fontWeight: "bold" }}>
                     TRT INJECTION: {trtStatusText} — due {trtNextLabel}
                   </div>
                 )}
-                {birthdays.map((b, i) => <div key={i} className="briefing-line" style={{ color: "var(--pip-amber)" }}>{b}</div>)}
+                {birthdays.map((b, i) => <div key={i} className="briefing-line alert" style={{ color: "var(--pip-amber)" }}>{b}</div>)}
               </div>
             )}
 
@@ -2496,13 +2534,14 @@ export default function ClawCommandCenter() {
           <div className="pipboy-rivet tr" />
           <div className="pipboy-rivet bl" />
           <div className="pipboy-rivet br" />
-          <div className="pipboy-knob" />
+          <div className="pipboy-antenna">{[...Array(8)].map((_, i) => <div key={i} className="antenna-tick" />)}</div>
+          <div className="pipboy-frame-label">RobCo Industries (TM) Termlink</div>
 
           <div className="pipboy-screen">
             <div className="pipboy-screen-inner">
               <div className="pip-container">
                 <div className="pip-header">
-                  <h1>CLAW COMMAND CENTER</h1>
+                  <h1>{"\u2622"} CLAW COMMAND CENTER</h1>
                   <div className="subtitle">Personal Operating System v3.0 — Pip-Boy Edition</div>
                 </div>
 
@@ -2538,6 +2577,11 @@ export default function ClawCommandCenter() {
                 </div>
               </div>
             </div>
+          </div>
+          <div className="pipboy-knobs">
+            <div className="pipboy-knob-group"><div className="pipboy-knob small" /><div className="knob-label">TUNE</div></div>
+            <div className="pipboy-knob-group"><div className="pipboy-knob large" /><div className="knob-label">STAT</div></div>
+            <div className="pipboy-knob-group"><div className="pipboy-knob small" /><div className="knob-label">VOL</div></div>
           </div>
         </div>
       </div>
